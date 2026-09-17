@@ -18,6 +18,8 @@ type Config struct {
 
 	AssemblyAIAPIKey       string
 	AssemblyAIStreamingURL string
+	AssemblyAILLMBaseURL string
+  AssemblyAILLMModel   string
 
 	RealtimePort string
 }
@@ -36,6 +38,8 @@ func Load() (Config, error) {
 
 		AssemblyAIAPIKey:       os.Getenv("ASSEMBLYAI_API_KEY"),
 		AssemblyAIStreamingURL: os.Getenv("ASSEMBLYAI_STREAMING_URL"),
+		AssemblyAILLMBaseURL:   os.Getenv("ASSEMBLYAI_LLM_BASE_URL"),
+    AssemblyAILLMModel:     os.Getenv("ASSEMBLYAI_LLM_MODEL"),
 
 		RealtimePort: os.Getenv("REALTIME_PORT"),
 	}
@@ -47,6 +51,14 @@ func Load() (Config, error) {
 	if cfg.AssemblyAIStreamingURL == "" {
 		cfg.AssemblyAIStreamingURL = "wss://streaming.assemblyai.com/v3/ws"
 	}
+
+	if cfg.AssemblyAILLMBaseURL == "" {
+  	cfg.AssemblyAILLMBaseURL = "https://llm-gateway.assemblyai.com/v1"
+  }
+
+  if cfg.AssemblyAILLMModel == "" {
+  	cfg.AssemblyAILLMModel = "openai/gpt-5-nano"
+  }
 
 	required := map[string]string{
 		"REDIS_URL":            cfg.RedisURL,

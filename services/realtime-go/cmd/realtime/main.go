@@ -8,16 +8,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	"lumos/realtime-go/internal/assemblyai"
 	"lumos/realtime-go/internal/config"
 	"lumos/realtime-go/internal/evidence"
 	"lumos/realtime-go/internal/livekitclient"
+	"lumos/realtime-go/internal/llmgateway"
 	"lumos/realtime-go/internal/meetingactor"
 	"lumos/realtime-go/internal/redisclient"
 	"lumos/realtime-go/internal/redisstream"
 	"lumos/realtime-go/internal/transcription"
-
-	"github.com/google/uuid"
 )
 
 const dependencyCheckTimeout = 10 * time.Second
@@ -46,7 +47,9 @@ func main() {
 	defer stop()
 
 	// Redis
-	redisClient, err := redisclient.New(cfg.RedisURL)
+	redisClient, err := redisclient.New(
+		cfg.RedisURL,
+	)
 	if err != nil {
 		logger.Error(
 			"failed to create Redis client",
@@ -67,28 +70,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info("Redis connection established")
-
-	actor := meetingactor.New(
-		cfg.LiveKitRoom,
-		logger,
+	logger.Info(
+		"Redis connection established",
 	)
 
-	actorConsumer := meetingactor.NewConsumer(
-		redisClient,
-		actor,
-		cfg.LiveKitRoom,
-		"realtime-"+uuid.NewString(),
-		logger,
-	)
-
-	actorErr := make(chan error, 1)
-
-	go func() {
-		actorErr <- actorConsumer.Run(ctx)
-	}()
-
-	evidencePublisher := redisstream.NewEvidencePublisher(redisClient)
+	// Durable evidence pipeline
+	evidencePublisher :=
+		redisstream.NewEvidencePublisher(
+			redisClient,
+		)
 
 	evidenceDispatcher :=
 		evidence.NewDispatcher(
@@ -121,9 +111,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info("LiveKit connection established")
+	logger.Info(
+		"LiveKit connection established",
+	)
 
-	// AssemblyAI
+	// AssemblyAI realtime transcription
 	assemblyAIClient := assemblyai.New(
 		cfg.AssemblyAIAPIKey,
 		cfg.AssemblyAIStreamingURL,
@@ -140,19 +132,67 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info("AssemblyAI authentication verified")
+	logger.Info(
+		"AssemblyAI authentication verified",
+	)
 
-	// Transcription orchestration
-	transcriptionManager := transcription.NewManager(
-		ctx,
+	// Semantic extraction through AssemblyAI LLM Gateway
+	semanticExtractor, err := llmgateway.New(
+		cfg.AssemblyAIAPIKey,
+		cfg.AssemblyAILLMBaseURL,
+		cfg.AssemblyAILLMModel,
+	)
+	if err != nil {
+		logger.Error(
+			"failed to create semantic extractor",
+			"error", err,
+		)
+		os.Exit(1)
+	}
+
+	// Durable semantic observations
+	semanticPublisher :=
+		redisstream.NewSemanticPublisher(
+			redisClient,
+		)
+
+	// MeetingActor
+	actor := meetingactor.New(
 		cfg.LiveKitRoom,
-		assemblyAIClient,
-		evidenceDispatcher,
+		semanticExtractor,
+		semanticPublisher,
 		logger,
 	)
 
-	// Join the LiveKit room only after all required
-	// dependencies are known to be available.
+	actorConsumer := meetingactor.NewConsumer(
+		redisClient,
+		actor,
+		cfg.LiveKitRoom,
+		"realtime-"+uuid.NewString(),
+		logger,
+	)
+
+	actorErr := make(
+		chan error,
+		1,
+	)
+
+	go func() {
+		actorErr <- actorConsumer.Run(ctx)
+	}()
+
+	// Realtime transcription orchestration
+	transcriptionManager :=
+		transcription.NewManager(
+			ctx,
+			cfg.LiveKitRoom,
+			assemblyAIClient,
+			evidenceDispatcher,
+			logger,
+		)
+
+	// Join LiveKit only after all required dependencies
+	// and processing components are initialized.
 	room, err := liveKitClient.ConnectToRoom(
 		cfg.LiveKitRoom,
 		cfg.LiveKitBotIdentity,
@@ -163,6 +203,7 @@ func main() {
 			"failed to join LiveKit room",
 			"error", err,
 		)
+
 		os.Exit(1)
 	}
 
@@ -186,9 +227,15 @@ func main() {
 				"meeting actor consumer stopped unexpectedly",
 				"error", err,
 			)
-
-			stop()
+		} else {
+			logger.Warn(
+				"meeting actor consumer stopped unexpectedly",
+			)
 		}
+
+		// Ensure the rest of the realtime service
+		// receives cancellation as well.
+		stop()
 	}
 
 	logger.Info(
@@ -196,9 +243,19 @@ func main() {
 		"service", "realtime-go",
 	)
 
+	// Shutdown order matters:
+	//
+	// 1. Stop audio producers and flush AssemblyAI sessions.
+	// 2. Drain remaining EvidenceTurn events into Redis.
+	// 3. Disconnect from LiveKit.
 	transcriptionManager.Close()
 	evidenceDispatcher.Close()
 	room.Disconnect()
+
+	logger.Info(
+		"LUMOS realtime service stopped",
+		"service", "realtime-go",
+	)
 }
 
 func checkDependency(
