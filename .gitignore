@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+build/
+.next/
+coverage/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+services/realtime-go/bin/
+services/realtime-go/tmp/
+
+# Tests
+test-results/
+playwright-report/
+
+# Temporary
+tmp/
+.temp/
