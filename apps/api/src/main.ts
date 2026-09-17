@@ -21,6 +21,16 @@ async function bootstrap() {
     infer: true,
   });
 
+  const webOrigin = config.get('WEB_ORIGIN', {
+    infer: true,
+  });
+
+  app.enableCors({
+    origin: webOrigin,
+    methods: ['GET', 'POST'],
+    credentials: true,
+  });
+
   app.setGlobalPrefix('api/v1');
   app.enableShutdownHooks();
 
