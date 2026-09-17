@@ -20,6 +20,20 @@ type Client struct {
 	apiSecret   string
 }
 
+type TrackHandler interface {
+	HandleTrackSubscribed(
+		track *webrtc.TrackRemote,
+		publication *lksdk.RemoteTrackPublication,
+		participant *lksdk.RemoteParticipant,
+	)
+
+	HandleTrackUnsubscribed(
+		track *webrtc.TrackRemote,
+		publication *lksdk.RemoteTrackPublication,
+		participant *lksdk.RemoteParticipant,
+	)
+}
+
 func New(
 	url string,
 	apiKey string,
@@ -58,23 +72,46 @@ func (c *Client) Check(ctx context.Context) error {
 func (c *Client) ConnectToRoom(
 	roomName string,
 	identity string,
+	handler TrackHandler,
 ) (*lksdk.Room, error) {
 	callback := &lksdk.RoomCallback{
-		ParticipantCallback: lksdk.ParticipantCallback{
-			OnTrackSubscribed: func(
-				track *webrtc.TrackRemote,
-				publication *lksdk.RemoteTrackPublication,
-				participant *lksdk.RemoteParticipant,
-			) {
-				slog.Info(
-					"LiveKit track subscribed",
-					"participant", participant.Identity(),
-					"trackId", track.ID(),
-					"codec", track.Codec().MimeType,
-				)
-			},
-		},
-	}
+  	ParticipantCallback: lksdk.ParticipantCallback{
+  		OnTrackSubscribed: func(
+  			track *webrtc.TrackRemote,
+  			publication *lksdk.RemoteTrackPublication,
+  			participant *lksdk.RemoteParticipant,
+  		) {
+  			slog.Info(
+  				"LiveKit track subscribed",
+  				"participant", participant.Identity(),
+  				"trackId", publication.SID(),
+  				"codec", track.Codec().MimeType,
+  			)
+
+  			if handler != nil {
+  				handler.HandleTrackSubscribed(
+  					track,
+  					publication,
+  					participant,
+  				)
+  			}
+  		},
+
+  		OnTrackUnsubscribed: func(
+  			track *webrtc.TrackRemote,
+  			publication *lksdk.RemoteTrackPublication,
+  			participant *lksdk.RemoteParticipant,
+  		) {
+  			if handler != nil {
+  				handler.HandleTrackUnsubscribed(
+  					track,
+  					publication,
+  					participant,
+  				)
+  			}
+  		},
+  	},
+  }
 
 	room, err := lksdk.ConnectToRoom(
 		c.realtimeURL,

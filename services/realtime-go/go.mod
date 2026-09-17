@@ -7,7 +7,9 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/livekit/protocol v1.49.0
 	github.com/livekit/server-sdk-go/v2 v2.18.1
-	github.com/pion/webrtc/v4 v4.2.18
+	github.com/pion/opus v0.1.0
+	github.com/pion/rtp v1.10.5
+	github.com/pion/webrtc/v4 v4.2.15
 	github.com/redis/go-redis/v9 v9.22.0
 )
 
@@ -51,7 +53,6 @@ require (
 	github.com/pion/mdns/v2 v2.1.0 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.17 // indirect
-	github.com/pion/rtp v1.10.5 // indirect
 	github.com/pion/sctp v1.11.1 // indirect
 	github.com/pion/sdp/v3 v3.0.19 // indirect
 	github.com/pion/srtp/v3 v3.0.12 // indirect
