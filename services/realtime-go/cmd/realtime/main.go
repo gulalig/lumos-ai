@@ -10,9 +10,14 @@ import (
 
 	"lumos/realtime-go/internal/assemblyai"
 	"lumos/realtime-go/internal/config"
+	"lumos/realtime-go/internal/evidence"
 	"lumos/realtime-go/internal/livekitclient"
+	"lumos/realtime-go/internal/meetingactor"
 	"lumos/realtime-go/internal/redisclient"
+	"lumos/realtime-go/internal/redisstream"
 	"lumos/realtime-go/internal/transcription"
+
+	"github.com/google/uuid"
 )
 
 const dependencyCheckTimeout = 10 * time.Second
@@ -64,6 +69,33 @@ func main() {
 
 	logger.Info("Redis connection established")
 
+	actor := meetingactor.New(
+		cfg.LiveKitRoom,
+		logger,
+	)
+
+	actorConsumer := meetingactor.NewConsumer(
+		redisClient,
+		actor,
+		cfg.LiveKitRoom,
+		"realtime-"+uuid.NewString(),
+		logger,
+	)
+
+	actorErr := make(chan error, 1)
+
+	go func() {
+		actorErr <- actorConsumer.Run(ctx)
+	}()
+
+	evidencePublisher := redisstream.NewEvidencePublisher(redisClient)
+
+	evidenceDispatcher :=
+		evidence.NewDispatcher(
+			evidencePublisher,
+			logger,
+		)
+
 	// LiveKit
 	liveKitClient, err := livekitclient.New(
 		cfg.LiveKitURL,
@@ -113,7 +145,9 @@ func main() {
 	// Transcription orchestration
 	transcriptionManager := transcription.NewManager(
 		ctx,
+		cfg.LiveKitRoom,
 		assemblyAIClient,
+		evidenceDispatcher,
 		logger,
 	)
 
@@ -143,7 +177,19 @@ func main() {
 		"service", "realtime-go",
 	)
 
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+
+	case err := <-actorErr:
+		if err != nil {
+			logger.Error(
+				"meeting actor consumer stopped unexpectedly",
+				"error", err,
+			)
+
+			stop()
+		}
+	}
 
 	logger.Info(
 		"LUMOS realtime service shutting down",
@@ -151,6 +197,7 @@ func main() {
 	)
 
 	transcriptionManager.Close()
+	evidenceDispatcher.Close()
 	room.Disconnect()
 }
 

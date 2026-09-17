@@ -17,6 +17,7 @@ describe('LiveKitTokenService', () => {
       LIVEKIT_API_KEY: 'test-key',
       LIVEKIT_API_SECRET: 'test-secret',
       LIVEKIT_ROOM: 'lumos-test',
+      WEB_ORIGIN: 'http://localhost:3000',
     };
 
     const config = {

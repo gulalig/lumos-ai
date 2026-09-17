@@ -14,15 +14,16 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media/samplebuilder"
 
-	lksdk "github.com/livekit/server-sdk-go/v2"
 	livekit "github.com/livekit/protocol/livekit"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 
 	"lumos/realtime-go/internal/assemblyai"
+	"lumos/realtime-go/internal/evidence"
 )
 
 const (
 	maxLateAudioPackets = 10
-	trackReadTimeout     = 1 * time.Second
+	trackReadTimeout    = 1 * time.Second
 
 	// Opus permits packets of up to 120 ms.
 	// 16 kHz mono = 1,920 samples maximum.
@@ -34,9 +35,11 @@ type trackState struct {
 }
 
 type Manager struct {
-	ctx      context.Context
-	assembly *assemblyai.Client
-	logger   *slog.Logger
+	ctx       context.Context
+	meetingID string
+	assembly  *assemblyai.Client
+	evidence  *evidence.Dispatcher
+	logger    *slog.Logger
 
 	mu     sync.Mutex
 	tracks map[string]*trackState
@@ -46,14 +49,18 @@ type Manager struct {
 
 func NewManager(
 	ctx context.Context,
+	meetingID string,
 	assembly *assemblyai.Client,
+	evidenceDispatcher *evidence.Dispatcher,
 	logger *slog.Logger,
 ) *Manager {
 	return &Manager{
-		ctx:      ctx,
-		assembly: assembly,
-		logger:   logger,
-		tracks:   make(map[string]*trackState),
+		ctx:       ctx,
+		meetingID: meetingID,
+		assembly:  assembly,
+		evidence:  evidenceDispatcher,
+		logger:    logger,
+		tracks:    make(map[string]*trackState),
 	}
 }
 
@@ -108,11 +115,7 @@ func (m *Manager) HandleTrackSubscribed(
 
 	m.mu.Unlock()
 
-	m.wg.Add(1)
-
-	go func() {
-		defer m.wg.Done()
-
+	m.wg.Go(func() {
 		m.runTrack(
 			trackCtx,
 			track,
@@ -120,7 +123,7 @@ func (m *Manager) HandleTrackSubscribed(
 			participant,
 			state,
 		)
-	}()
+	})
 }
 
 func (m *Manager) HandleTrackUnsubscribed(
@@ -175,8 +178,18 @@ func (m *Manager) runTrack(
 		state,
 	)
 
+	// The track context controls RTP consumption.
+	//
+	// AssemblyAI gets its own lifecycle so an unsubscribe does not
+	// immediately kill the transcription websocket before buffered
+	// audio and the Terminate message are flushed.
+	sessionCtx, sessionCancel := context.WithCancel(
+		context.Background(),
+	)
+	defer sessionCancel()
+
 	session, err := m.assembly.OpenSession(
-		ctx,
+		sessionCtx,
 		func(turn assemblyai.Turn) {
 			if turn.Transcript == "" {
 				return
@@ -191,6 +204,37 @@ func (m *Manager) runTrack(
 					"transcript", turn.Transcript,
 				)
 
+				evidenceTurn, err := evidence.NewTurn(
+					m.meetingID,
+					participantIdentity,
+					trackID,
+					turn.TurnOrder,
+					turn.Transcript,
+					time.Now().UTC(),
+				)
+				if err != nil {
+					m.logger.Error(
+						"failed to create evidence turn",
+						"participant", participantIdentity,
+						"trackId", trackID,
+						"turnOrder", turn.TurnOrder,
+						"error", err,
+					)
+
+					return
+				}
+
+				if err := m.evidence.Enqueue(
+					sessionCtx,
+					evidenceTurn,
+				); err != nil {
+					m.logger.Error(
+						"failed to enqueue evidence turn",
+						"eventId", evidenceTurn.EventID,
+						"error", err,
+					)
+				}
+
 				return
 			}
 
@@ -203,6 +247,7 @@ func (m *Manager) runTrack(
 			)
 		},
 	)
+
 	if err != nil {
 		m.logger.Error(
 			"failed to open AssemblyAI session",
@@ -215,7 +260,7 @@ func (m *Manager) runTrack(
 	}
 
 	chunker := newPCMChunker(
-		ctx,
+		sessionCtx,
 		session,
 	)
 

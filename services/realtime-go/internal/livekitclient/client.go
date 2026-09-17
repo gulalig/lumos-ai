@@ -75,43 +75,43 @@ func (c *Client) ConnectToRoom(
 	handler TrackHandler,
 ) (*lksdk.Room, error) {
 	callback := &lksdk.RoomCallback{
-  	ParticipantCallback: lksdk.ParticipantCallback{
-  		OnTrackSubscribed: func(
-  			track *webrtc.TrackRemote,
-  			publication *lksdk.RemoteTrackPublication,
-  			participant *lksdk.RemoteParticipant,
-  		) {
-  			slog.Info(
-  				"LiveKit track subscribed",
-  				"participant", participant.Identity(),
-  				"trackId", publication.SID(),
-  				"codec", track.Codec().MimeType,
-  			)
+		ParticipantCallback: lksdk.ParticipantCallback{
+			OnTrackSubscribed: func(
+				track *webrtc.TrackRemote,
+				publication *lksdk.RemoteTrackPublication,
+				participant *lksdk.RemoteParticipant,
+			) {
+				slog.Info(
+					"LiveKit track subscribed",
+					"participant", participant.Identity(),
+					"trackId", publication.SID(),
+					"codec", track.Codec().MimeType,
+				)
 
-  			if handler != nil {
-  				handler.HandleTrackSubscribed(
-  					track,
-  					publication,
-  					participant,
-  				)
-  			}
-  		},
+				if handler != nil {
+					handler.HandleTrackSubscribed(
+						track,
+						publication,
+						participant,
+					)
+				}
+			},
 
-  		OnTrackUnsubscribed: func(
-  			track *webrtc.TrackRemote,
-  			publication *lksdk.RemoteTrackPublication,
-  			participant *lksdk.RemoteParticipant,
-  		) {
-  			if handler != nil {
-  				handler.HandleTrackUnsubscribed(
-  					track,
-  					publication,
-  					participant,
-  				)
-  			}
-  		},
-  	},
-  }
+			OnTrackUnsubscribed: func(
+				track *webrtc.TrackRemote,
+				publication *lksdk.RemoteTrackPublication,
+				participant *lksdk.RemoteParticipant,
+			) {
+				if handler != nil {
+					handler.HandleTrackUnsubscribed(
+						track,
+						publication,
+						participant,
+					)
+				}
+			},
+		},
+	}
 
 	room, err := lksdk.ConnectToRoom(
 		c.realtimeURL,
