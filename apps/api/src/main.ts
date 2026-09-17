@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,
@@ -6,6 +7,7 @@ import {
 } from '@nestjs/platform-fastify';
 
 import { AppModule } from './app.module.js';
+import type { Env } from './config/env.js';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -13,10 +15,13 @@ async function bootstrap() {
     new FastifyAdapter(),
   );
 
-  const port = Number(process.env.PORT ?? 3001);
+  const config = app.get(ConfigService<Env, true>);
+
+  const port = config.get('API_PORT', {
+    infer: true,
+  });
 
   app.setGlobalPrefix('api/v1');
-
   app.enableShutdownHooks();
 
   await app.listen(port, '0.0.0.0');

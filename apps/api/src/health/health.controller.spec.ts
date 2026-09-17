@@ -1,23 +1,38 @@
-import { Test } from '@nestjs/testing';
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import type { DatabaseService } from '../database/database.service.js';
+import type { RedisService } from '../redis/redis.service.js';
 import { HealthController } from './health.controller.js';
 
 describe('HealthController', () => {
-  let controller: HealthController;
+  const database = {
+    isHealthy: vi.fn(),
+  } as unknown as DatabaseService;
 
-  beforeEach(async () => {
-    const moduleRef = await Test.createTestingModule({
-      controllers: [HealthController],
-    }).compile();
+  const redis = {
+    isHealthy: vi.fn(),
+  } as unknown as RedisService;
 
-    controller = moduleRef.get(HealthController);
-  });
+  const controller = new HealthController(database, redis);
 
-  it('should return healthy status', () => {
-    expect(controller.getHealth()).toEqual({
+  it('should return liveness status', () => {
+    expect(controller.getLiveness()).toEqual({
       status: 'ok',
       service: 'lumos-api',
+    });
+  });
+
+  it('should return readiness status when dependencies are healthy', async () => {
+    vi.mocked(database.isHealthy).mockResolvedValue(true);
+    vi.mocked(redis.isHealthy).mockResolvedValue(true);
+
+    await expect(controller.getReadiness()).resolves.toEqual({
+      status: 'ready',
+      service: 'lumos-api',
+      dependencies: {
+        postgres: 'up',
+        redis: 'up',
+      },
     });
   });
 });
