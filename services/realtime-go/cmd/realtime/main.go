@@ -13,19 +13,25 @@ import (
 	"lumos/realtime-go/internal/assemblyai"
 	"lumos/realtime-go/internal/config"
 	"lumos/realtime-go/internal/evidence"
+	"lumos/realtime-go/internal/groqsemantic"
 	"lumos/realtime-go/internal/livekitclient"
-	"lumos/realtime-go/internal/llmgateway"
 	"lumos/realtime-go/internal/meetingactor"
 	"lumos/realtime-go/internal/redisclient"
 	"lumos/realtime-go/internal/redisstream"
 	"lumos/realtime-go/internal/transcription"
 )
 
-const dependencyCheckTimeout = 10 * time.Second
+const (
+	dependencyCheckTimeout = 10 * time.Second
+	shutdownWaitTimeout    = 5 * time.Second
+)
 
 func main() {
 	logger := slog.New(
-		slog.NewJSONHandler(os.Stdout, nil),
+		slog.NewJSONHandler(
+			os.Stdout,
+			nil,
+		),
 	)
 
 	slog.SetDefault(logger)
@@ -36,6 +42,7 @@ func main() {
 			"failed to load config",
 			"error", err,
 		)
+
 		os.Exit(1)
 	}
 
@@ -55,6 +62,7 @@ func main() {
 			"failed to create Redis client",
 			"error", err,
 		)
+
 		os.Exit(1)
 	}
 	defer redisClient.Close()
@@ -67,6 +75,7 @@ func main() {
 			"Redis check failed",
 			"error", err,
 		)
+
 		os.Exit(1)
 	}
 
@@ -97,6 +106,7 @@ func main() {
 			"failed to create LiveKit client",
 			"error", err,
 		)
+
 		os.Exit(1)
 	}
 
@@ -108,6 +118,7 @@ func main() {
 			"LiveKit check failed",
 			"error", err,
 		)
+
 		os.Exit(1)
 	}
 
@@ -129,6 +140,7 @@ func main() {
 			"AssemblyAI check failed",
 			"error", err,
 		)
+
 		os.Exit(1)
 	}
 
@@ -136,19 +148,27 @@ func main() {
 		"AssemblyAI authentication verified",
 	)
 
-	// Semantic extraction through AssemblyAI LLM Gateway
-	semanticExtractor, err := llmgateway.New(
-		cfg.AssemblyAIAPIKey,
-		cfg.AssemblyAILLMBaseURL,
-		cfg.AssemblyAILLMModel,
+	// Groq semantic extraction
+	semanticExtractor, err := groqsemantic.New(
+		cfg.GroqAPIKey,
+		cfg.GroqBaseURL,
+		cfg.GroqModel,
 	)
 	if err != nil {
 		logger.Error(
 			"failed to create semantic extractor",
+			"provider", cfg.SemanticProvider,
 			"error", err,
 		)
+
 		os.Exit(1)
 	}
+
+	logger.Info(
+		"semantic extractor configured",
+		"provider", cfg.SemanticProvider,
+		"model", cfg.GroqModel,
+	)
 
 	// Durable semantic observations
 	semanticPublisher :=
@@ -156,7 +176,7 @@ func main() {
 			redisClient,
 		)
 
-	// MeetingActor
+	// Meeting actor
 	actor := meetingactor.New(
 		cfg.LiveKitRoom,
 		semanticExtractor,
@@ -191,8 +211,8 @@ func main() {
 			logger,
 		)
 
-	// Join LiveKit only after all required dependencies
-	// and processing components are initialized.
+	// Join LiveKit only after all dependencies
+	// and processing components are ready.
 	room, err := liveKitClient.ConnectToRoom(
 		cfg.LiveKitRoom,
 		cfg.LiveKitBotIdentity,
@@ -204,6 +224,7 @@ func main() {
 			"error", err,
 		)
 
+		stop()
 		os.Exit(1)
 	}
 
@@ -220,6 +241,9 @@ func main() {
 
 	select {
 	case <-ctx.Done():
+		logger.Info(
+			"shutdown signal received",
+		)
 
 	case err := <-actorErr:
 		if err != nil {
@@ -233,8 +257,6 @@ func main() {
 			)
 		}
 
-		// Ensure the rest of the realtime service
-		// receives cancellation as well.
 		stop()
 	}
 
@@ -243,14 +265,23 @@ func main() {
 		"service", "realtime-go",
 	)
 
-	// Shutdown order matters:
-	//
-	// 1. Stop audio producers and flush AssemblyAI sessions.
-	// 2. Drain remaining EvidenceTurn events into Redis.
-	// 3. Disconnect from LiveKit.
+	// Stop producing new transcript/evidence events first.
 	transcriptionManager.Close()
+
+	// Flush buffered EvidenceTurn events to Redis.
 	evidenceDispatcher.Close()
+
+	// Leave the realtime room after transcription pipelines
+	// have been flushed.
 	room.Disconnect()
+
+	// Make sure all remaining components observe cancellation.
+	stop()
+
+	waitForActorShutdown(
+		actorErr,
+		logger,
+	)
 
 	logger.Info(
 		"LUMOS realtime service stopped",
@@ -269,4 +300,29 @@ func checkDependency(
 	defer cancel()
 
 	return check(ctx)
+}
+
+func waitForActorShutdown(
+	actorErr <-chan error,
+	logger *slog.Logger,
+) {
+	timer := time.NewTimer(
+		shutdownWaitTimeout,
+	)
+	defer timer.Stop()
+
+	select {
+	case err := <-actorErr:
+		if err != nil {
+			logger.Warn(
+				"meeting actor stopped during shutdown",
+				"error", err,
+			)
+		}
+
+	case <-timer.C:
+		logger.Warn(
+			"timed out waiting for meeting actor shutdown",
+		)
+	}
 }

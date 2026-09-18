@@ -137,3 +137,34 @@ func (c *Client) XAck(
 
 	return nil
 }
+
+func (c *Client) XAutoClaim(
+	ctx context.Context,
+	stream string,
+	group string,
+	consumer string,
+	minIdle time.Duration,
+	start string,
+	count int64,
+) ([]redis.XMessage, string, error) {
+	messages, next, err := c.client.XAutoClaim(
+		ctx,
+		&redis.XAutoClaimArgs{
+			Stream:   stream,
+			Group:    group,
+			Consumer: consumer,
+			MinIdle:  minIdle,
+			Start:    start,
+			Count:    count,
+		},
+	).Result()
+
+	if err != nil {
+		return nil, "", fmt.Errorf(
+			"auto-claim redis stream messages: %w",
+			err,
+		)
+	}
+
+	return messages, next, nil
+}

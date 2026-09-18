@@ -46,6 +46,14 @@ var (
 	ErrUnsupportedKind = errors.New(
 		"unsupported semantic kind",
 	)
+
+	ErrUngroundedDecision = errors.New(
+		"decision is not explicitly grounded in evidence",
+	)
+
+	ErrUngroundedOwner = errors.New(
+		"commitment owner is not grounded in evidence",
+	)
 )
 
 type Observation struct {

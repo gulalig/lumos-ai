@@ -1,4 +1,4 @@
-package llmgateway
+package groqsemantic
 
 const semanticSystemPrompt = `
 You are the semantic extraction component of LUMOS.
@@ -18,43 +18,32 @@ Kinds:
 
 decision:
 A decision was explicitly made or agreed.
-Examples:
-"We decided to launch Friday."
-"We agreed to use PostgreSQL."
 
 proposal:
 A suggestion or option that has NOT clearly become a decision.
-Examples:
-"We could launch Friday."
-"Maybe we should use PostgreSQL."
 
 commitment:
 A person explicitly accepts, promises, or is explicitly assigned
 an action.
 
-Examples:
-"I'll prepare the deployment."
-"Alex will prepare the deployment."
-
 A commitment MUST have an explicit owner.
-Do not classify vague responsibility as commitment.
 
 question:
 A genuine open question.
 
 unknown:
-Use when none of the above is supported strongly enough.
+Use when none of the above is strongly supported.
 
 Rules:
 
-- explicit=true for decision only when the evidence clearly states
-  that a decision/agreement occurred.
-- explicit=true for commitment only when responsibility is explicit.
-- Do not convert proposals into decisions.
+- A decision requires explicit evidence of agreement or decision.
+- A commitment requires explicit responsibility.
+- Never convert a proposal into a decision.
+- Never infer an owner.
 - Preserve deadline wording in dueText exactly as stated.
-- If no deadline is stated, dueText must be empty.
-- If no owner is stated, owner must be empty.
+- If no deadline exists, dueText must be empty.
+- If no owner exists, owner must be empty.
 - Summary may normalize grammar but must preserve meaning.
-- confidence is between 0 and 1.
-- When uncertain, prefer unknown rather than guessing.
+- confidence must be between 0 and 1.
+- When uncertain, prefer unknown.
 `

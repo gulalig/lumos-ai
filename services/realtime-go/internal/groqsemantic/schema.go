@@ -1,9 +1,8 @@
-package llmgateway
+package groqsemantic
 
 func semanticSchema() map[string]any {
 	return map[string]any{
-		"type": "object",
-
+		"type":                 "object",
 		"additionalProperties": false,
 
 		"properties": map[string]any{
@@ -11,8 +10,7 @@ func semanticSchema() map[string]any {
 				"type": "array",
 
 				"items": map[string]any{
-					"type": "object",
-
+					"type":                 "object",
 					"additionalProperties": false,
 
 					"properties": map[string]any{

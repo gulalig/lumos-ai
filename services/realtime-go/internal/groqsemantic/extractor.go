@@ -1,4 +1,4 @@
-package llmgateway
+package groqsemantic
 
 import (
 	"bytes"
@@ -16,17 +16,17 @@ import (
 )
 
 const (
-	defaultHTTPTimeout = 8 * time.Second
-	maxErrorBodyBytes  = 4 * 1024
+	httpTimeout       = 8 * time.Second
+	maxErrorBodyBytes = 4 * 1024
 )
 
 var (
 	ErrEmptyResponse = errors.New(
-		"llm gateway returned no choices",
+		"groq returned no choices",
 	)
 
 	ErrEmptyContent = errors.New(
-		"llm gateway returned empty content",
+		"groq returned empty content",
 	)
 )
 
@@ -44,27 +44,29 @@ func New(
 	model string,
 ) (*Extractor, error) {
 	apiKey = strings.TrimSpace(apiKey)
+
 	baseURL = strings.TrimRight(
 		strings.TrimSpace(baseURL),
 		"/",
 	)
+
 	model = strings.TrimSpace(model)
 
 	if apiKey == "" {
 		return nil, errors.New(
-			"assemblyai api key is required",
+			"groq api key is required",
 		)
 	}
 
 	if baseURL == "" {
 		return nil, errors.New(
-			"llm gateway base url is required",
+			"groq base url is required",
 		)
 	}
 
 	if model == "" {
 		return nil, errors.New(
-			"llm gateway model is required",
+			"groq model is required",
 		)
 	}
 
@@ -74,7 +76,7 @@ func New(
 		model:   model,
 
 		httpClient: &http.Client{
-			Timeout: defaultHTTPTimeout,
+			Timeout: httpTimeout,
 		},
 	}, nil
 }
@@ -89,9 +91,9 @@ type chatRequest struct {
 
 	Messages []chatMessage `json:"messages"`
 
-	MaxTokens int `json:"max_tokens"`
-
 	ResponseFormat responseFormat `json:"response_format"`
+
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 type responseFormat struct {
@@ -137,8 +139,6 @@ func (e *Extractor) Extract(
 			},
 		},
 
-		MaxTokens: 500,
-
 		ResponseFormat: responseFormat{
 			Type: "json_schema",
 
@@ -150,12 +150,18 @@ func (e *Extractor) Extract(
 				Schema: semanticSchema(),
 			},
 		},
+
+		// Extraction is constrained enough that we don't
+		// need expensive reasoning for every meeting turn.
+		ReasoningEffort: "low",
 	}
 
-	body, err := json.Marshal(requestBody)
+	body, err := json.Marshal(
+		requestBody,
+	)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"marshal llm gateway request: %w",
+			"marshal groq request: %w",
 			err,
 		)
 	}
@@ -168,14 +174,14 @@ func (e *Extractor) Extract(
 	)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"create llm gateway request: %w",
+			"create groq request: %w",
 			err,
 		)
 	}
 
 	request.Header.Set(
 		"Authorization",
-		e.apiKey,
+		"Bearer "+e.apiKey,
 	)
 
 	request.Header.Set(
@@ -183,10 +189,12 @@ func (e *Extractor) Extract(
 		"application/json",
 	)
 
-	response, err := e.httpClient.Do(request)
+	response, err := e.httpClient.Do(
+		request,
+	)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"call llm gateway: %w",
+			"call groq api: %w",
 			err,
 		)
 	}
@@ -202,7 +210,7 @@ func (e *Extractor) Extract(
 		)
 
 		return nil, fmt.Errorf(
-			"llm gateway returned status %d: %s",
+			"groq returned status %d: %s",
 			response.StatusCode,
 			strings.TrimSpace(
 				string(errorBody),
@@ -216,7 +224,7 @@ func (e *Extractor) Extract(
 		response.Body,
 	).Decode(&completion); err != nil {
 		return nil, fmt.Errorf(
-			"decode llm gateway response: %w",
+			"decode groq response: %w",
 			err,
 		)
 	}
@@ -235,19 +243,19 @@ func (e *Extractor) Extract(
 		return nil, ErrEmptyContent
 	}
 
-	var semanticResult semanticResponse
+	var result semanticResponse
 
 	if err := json.Unmarshal(
 		[]byte(content),
-		&semanticResult,
+		&result,
 	); err != nil {
 		return nil, fmt.Errorf(
-			"decode semantic output: %w",
+			"decode groq semantic output: %w",
 			err,
 		)
 	}
 
-	return semanticResult.Observations, nil
+	return result.Observations, nil
 }
 
 func buildEvidencePrompt(

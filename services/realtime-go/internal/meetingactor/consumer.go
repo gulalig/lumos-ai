@@ -17,6 +17,8 @@ const (
 
 	readBatchSize = 16
 	readBlockTime = 2 * time.Second
+
+	pendingMinIdle = 5 * time.Second
 )
 
 type Consumer struct {
@@ -57,6 +59,13 @@ func (c *Consumer) Run(
 		stream,
 		consumerGroup,
 		"0",
+	); err != nil {
+		return err
+	}
+
+	if err := c.recoverPending(
+		ctx,
+		stream,
 	); err != nil {
 		return err
 	}
@@ -164,4 +173,59 @@ func (c *Consumer) process(
 	)
 
 	return nil
+}
+
+func (c *Consumer) recoverPending(
+	ctx context.Context,
+	stream string,
+) error {
+	start := "0-0"
+
+	for {
+		messages, next, err := c.redis.XAutoClaim(
+			ctx,
+			stream,
+			consumerGroup,
+			c.consumerName,
+			pendingMinIdle,
+			start,
+			readBatchSize,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"recover pending evidence: %w",
+				err,
+			)
+		}
+
+		for _, message := range messages {
+			c.logger.Info(
+				"meeting actor recovered pending evidence",
+				"meetingId", c.meetingID,
+				"streamId", message.ID,
+			)
+
+			if err := c.process(
+				ctx,
+				stream,
+				message,
+			); err != nil {
+				c.logger.Error(
+					"meeting actor failed to process recovered evidence",
+					"meetingId", c.meetingID,
+					"streamId", message.ID,
+					"error", err,
+				)
+
+				// Still no ACK.
+				continue
+			}
+		}
+
+		if next == "0-0" {
+			return nil
+		}
+
+		start = next
+	}
 }

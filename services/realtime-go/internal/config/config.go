@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -18,8 +19,13 @@ type Config struct {
 
 	AssemblyAIAPIKey       string
 	AssemblyAIStreamingURL string
-	AssemblyAILLMBaseURL string
-  AssemblyAILLMModel   string
+
+	SemanticProvider string
+
+	GroqAPIKey        string
+	GroqBaseURL       string
+	GroqModel         string
+	GroqFallbackModel string
 
 	RealtimePort string
 }
@@ -38,8 +44,17 @@ func Load() (Config, error) {
 
 		AssemblyAIAPIKey:       os.Getenv("ASSEMBLYAI_API_KEY"),
 		AssemblyAIStreamingURL: os.Getenv("ASSEMBLYAI_STREAMING_URL"),
-		AssemblyAILLMBaseURL:   os.Getenv("ASSEMBLYAI_LLM_BASE_URL"),
-    AssemblyAILLMModel:     os.Getenv("ASSEMBLYAI_LLM_MODEL"),
+
+		SemanticProvider: strings.ToLower(
+			strings.TrimSpace(
+				os.Getenv("SEMANTIC_PROVIDER"),
+			),
+		),
+
+		GroqAPIKey:        os.Getenv("GROQ_API_KEY"),
+		GroqBaseURL:       os.Getenv("GROQ_BASE_URL"),
+		GroqModel:         os.Getenv("GROQ_MODEL"),
+		GroqFallbackModel: os.Getenv("GROQ_FALLBACK_MODEL"),
 
 		RealtimePort: os.Getenv("REALTIME_PORT"),
 	}
@@ -49,16 +64,28 @@ func Load() (Config, error) {
 	}
 
 	if cfg.AssemblyAIStreamingURL == "" {
-		cfg.AssemblyAIStreamingURL = "wss://streaming.assemblyai.com/v3/ws"
+		cfg.AssemblyAIStreamingURL =
+			"wss://streaming.assemblyai.com/v3/ws"
 	}
 
-	if cfg.AssemblyAILLMBaseURL == "" {
-  	cfg.AssemblyAILLMBaseURL = "https://llm-gateway.assemblyai.com/v1"
-  }
+	if cfg.SemanticProvider == "" {
+		cfg.SemanticProvider = "groq"
+	}
 
-  if cfg.AssemblyAILLMModel == "" {
-  	cfg.AssemblyAILLMModel = "openai/gpt-5-nano"
-  }
+	if cfg.GroqBaseURL == "" {
+		cfg.GroqBaseURL =
+			"https://api.groq.com/openai/v1"
+	}
+
+	if cfg.GroqModel == "" {
+		cfg.GroqModel =
+			"openai/gpt-oss-20b"
+	}
+
+	if cfg.GroqFallbackModel == "" {
+		cfg.GroqFallbackModel =
+			"openai/gpt-oss-120b"
+	}
 
 	required := map[string]string{
 		"REDIS_URL":            cfg.RedisURL,
@@ -71,9 +98,27 @@ func Load() (Config, error) {
 	}
 
 	for name, value := range required {
-		if value == "" {
-			return Config{}, fmt.Errorf("required environment variable %s is missing", name)
+		if strings.TrimSpace(value) == "" {
+			return Config{}, fmt.Errorf(
+				"required environment variable %s is missing",
+				name,
+			)
 		}
+	}
+
+	switch cfg.SemanticProvider {
+	case "groq":
+		if strings.TrimSpace(cfg.GroqAPIKey) == "" {
+			return Config{}, fmt.Errorf(
+				"GROQ_API_KEY is required when SEMANTIC_PROVIDER=groq",
+			)
+		}
+
+	default:
+		return Config{}, fmt.Errorf(
+			"unsupported semantic provider %q",
+			cfg.SemanticProvider,
+		)
 	}
 
 	return cfg, nil

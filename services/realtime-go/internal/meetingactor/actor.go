@@ -73,69 +73,86 @@ func (a *Actor) HandleEvidence(
 	}
 
 	a.logger.Info(
-  	"meeting actor accepted evidence",
-  	"meetingId", turn.MeetingID,
-  	"eventId", turn.EventID,
-  	"participantId", turn.ParticipantID,
-  	"turnOrder", turn.TurnOrder,
-  )
+		"meeting actor accepted evidence",
+		"meetingId", turn.MeetingID,
+		"eventId", turn.EventID,
+		"participantId", turn.ParticipantID,
+		"turnOrder", turn.TurnOrder,
+	)
 
-  candidates, err := a.extractor.Extract(
-  	ctx,
-  	turn,
-  )
-  if err != nil {
-  	return fmt.Errorf(
-  		"extract semantics: %w",
-  		err,
-  	)
-  }
+	candidates, err := a.extractor.Extract(
+		ctx,
+		turn,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"extract semantics: %w",
+			err,
+		)
+	}
 
-  for _, candidate := range candidates {
-  	observation, err :=
-  		candidate.ToObservation(turn)
+	for _, candidate := range candidates {
+		// Grounding validation happens before the candidate
+		// is allowed to become a trusted domain observation.
+		if err := semantics.ValidateGrounding(
+			candidate,
+			turn.Text,
+		); err != nil {
+			a.logger.Warn(
+				"semantic candidate failed grounding",
+				"meetingId", turn.MeetingID,
+				"eventId", turn.EventID,
+				"kind", candidate.Kind,
+				"error", err,
+			)
 
-  	if err != nil {
-  		// Fail closed.
-  		//
-  		// Invalid LLM semantic output must not become
-  		// domain state, but it also must not poison the
-  		// evidence queue forever.
-  		a.logger.Warn(
-  			"semantic candidate rejected",
-  			"meetingId", turn.MeetingID,
-  			"eventId", turn.EventID,
-  			"kind", candidate.Kind,
-  			"error", err,
-  		)
+			continue
+		}
 
-  		continue
-  	}
+		observation, err :=
+			candidate.ToObservation(turn)
 
-  	streamID, err := a.publisher.Publish(
-  		ctx,
-  		a.meetingID,
-  		observation,
-  	)
-  	if err != nil {
-  		return fmt.Errorf(
-  			"publish semantic observation: %w",
-  			err,
-  		)
-  	}
+		if err != nil {
+			// Fail closed.
+			//
+			// Invalid LLM semantic output must not become
+			// domain state, but it also must not poison the
+			// evidence queue forever.
+			a.logger.Warn(
+				"semantic candidate rejected",
+				"meetingId", turn.MeetingID,
+				"eventId", turn.EventID,
+				"kind", candidate.Kind,
+				"error", err,
+			)
 
-  	a.logger.Info(
-  		"semantic observation published",
-  		"meetingId", a.meetingID,
-  		"observationId", observation.ID,
-  		"kind", observation.Kind,
-  		"summary", observation.Summary,
-  		"owner", observation.Owner,
-  		"dueText", observation.DueText,
-  		"confidence", observation.Confidence,
-  		"streamId", streamID,
-  	)
-  }
+			continue
+		}
 
-  return nil
+		streamID, err := a.publisher.Publish(
+			ctx,
+			a.meetingID,
+			observation,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"publish semantic observation: %w",
+				err,
+			)
+		}
+
+		a.logger.Info(
+			"semantic observation published",
+			"meetingId", a.meetingID,
+			"observationId", observation.ID,
+			"kind", observation.Kind,
+			"summary", observation.Summary,
+			"owner", observation.Owner,
+			"dueText", observation.DueText,
+			"confidence", observation.Confidence,
+			"streamId", streamID,
+		)
+	}
+
+	return nil
 }
