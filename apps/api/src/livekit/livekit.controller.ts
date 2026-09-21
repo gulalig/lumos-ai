@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  Body,
   Controller,
   HttpCode,
   HttpStatus,
@@ -6,7 +8,14 @@ import {
 } from '@nestjs/common';
 
 import { LiveKitTokenService } from './livekit-token.service.js';
-import type { LiveKitConnectionDetails } from './livekit.types.js';
+
+import {
+  createLiveKitTokenRequestSchema,
+} from './livekit.types.js';
+
+import type {
+  LiveKitConnectionDetails,
+} from './livekit.types.js';
 
 @Controller('livekit')
 export class LiveKitController {
@@ -16,7 +25,23 @@ export class LiveKitController {
 
   @Post('token')
   @HttpCode(HttpStatus.CREATED)
-  async createToken(): Promise<LiveKitConnectionDetails> {
-    return this.liveKitTokenService.createConnectionDetails();
+  async createToken(
+    @Body() body: unknown,
+  ): Promise<LiveKitConnectionDetails> {
+    const parsed =
+      createLiveKitTokenRequestSchema.safeParse(
+        body,
+      );
+
+    if (!parsed.success) {
+      throw new BadRequestException(
+        'meetingId must be a valid UUID',
+      );
+    }
+
+    return this.liveKitTokenService
+      .createConnectionDetails(
+        parsed.data.meetingId,
+      );
   }
 }

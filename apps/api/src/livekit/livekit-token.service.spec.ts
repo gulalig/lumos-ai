@@ -1,54 +1,128 @@
 import { ConfigService } from '@nestjs/config';
-import { beforeEach, describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
-import type { Env } from '../config/env.js';
+import type {
+  Env,
+} from '../config/env.js';
+
+import { MeetingsService } from '../meetings/meetings.service.js';
+
 import { LiveKitTokenService } from './livekit-token.service.js';
 
 describe('LiveKitTokenService', () => {
-  let service: LiveKitTokenService;
+  it(
+    'creates a token and starts the requested meeting',
+    async () => {
+      const meetingId =
+        '90c7bb9d-de11-496f-ab54-beb2fed1f5db';
 
-  beforeEach(() => {
-    const values: Env = {
-      NODE_ENV: 'test',
-      API_PORT: 3001,
-      DATABASE_URL: 'postgresql://test',
-      REDIS_URL: 'redis://localhost:6379',
-      LIVEKIT_URL: 'wss://test.livekit.cloud',
-      LIVEKIT_API_KEY: 'test-key',
-      LIVEKIT_API_SECRET: 'test-secret',
-      LIVEKIT_ROOM: 'lumos-test',
-      WEB_ORIGIN: 'http://localhost:3000',
-    };
+      const meeting = {
+        id: meetingId,
+        roomName: meetingId,
+        status: 'created' as const,
+        createdAt: new Date(),
+        startedAt: null,
+        endedAt: null,
+      };
 
-    const config = {
-      get: (key: keyof Env) => values[key],
-    } as ConfigService<Env, true>;
+      const activeMeeting = {
+        ...meeting,
+        status: 'active' as const,
+        startedAt: new Date(),
+      };
 
-    service = new LiveKitTokenService(config);
-  });
+      const configValues:
+        Record<string, string> = {
+        LIVEKIT_URL:
+          'wss://example.livekit.cloud',
 
-  it('creates scoped connection details', async () => {
-    const result = await service.createConnectionDetails();
+        LIVEKIT_API_KEY:
+          'test-api-key',
 
-    expect(result.serverUrl).toBe(
-      'wss://test.livekit.cloud',
-    );
+        LIVEKIT_API_SECRET:
+          'test-api-secret-test-api-secret',
+      };
 
-    expect(result.roomName).toBe('lumos-test');
+      const config = {
+        get: vi.fn(
+          (key: string) =>
+            configValues[key],
+        ),
+      } as unknown as ConfigService<
+        Env,
+        true
+      >;
 
-    expect(result.participantIdentity).toMatch(
-      /^participant_/,
-    );
+      const meetingsService = {
+        getById:
+          vi.fn()
+            .mockResolvedValue(
+              meeting,
+            ),
 
-    expect(result.participantToken).toBeTruthy();
-  });
+        start:
+          vi.fn()
+            .mockResolvedValue(
+              activeMeeting,
+            ),
+      } as unknown as MeetingsService;
 
-  it('creates a unique participant identity per request', async () => {
-    const first = await service.createConnectionDetails();
-    const second = await service.createConnectionDetails();
+      const service =
+        new LiveKitTokenService(
+          config,
+          meetingsService,
+        );
 
-    expect(first.participantIdentity).not.toBe(
-      second.participantIdentity,
-    );
-  });
+      const result =
+        await service
+          .createConnectionDetails(
+            meetingId,
+          );
+
+      expect(
+        meetingsService.getById,
+      ).toHaveBeenCalledWith(
+        meetingId,
+      );
+
+      expect(
+        meetingsService.start,
+      ).toHaveBeenCalledWith(
+        meetingId,
+      );
+
+      expect(
+        result.meetingId,
+      ).toBe(
+        meetingId,
+      );
+
+      expect(
+        result.roomName,
+      ).toBe(
+        meetingId,
+      );
+
+      expect(
+        result.serverUrl,
+      ).toBe(
+        'wss://example.livekit.cloud',
+      );
+
+      expect(
+        result.participantIdentity,
+      ).toMatch(
+        /^participant_/,
+      );
+
+      expect(
+        result.participantToken,
+      ).toBeTruthy();
+    },
+  );
 });

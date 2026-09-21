@@ -1,12 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { resolve } from 'path';
+import { resolve } from 'node:path';
 
 import { envSchema } from './config/env.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { LiveKitModule } from "./livekit/livekit.module.js";
+import { MeetingsModule } from "./meetings/meetings.module.js";
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { LiveKitModule } from "./livekit/livekit.module.js";
     RedisModule,
     HealthModule,
     LiveKitModule,
+    MeetingsModule,
   ],
 })
 export class AppModule {}
