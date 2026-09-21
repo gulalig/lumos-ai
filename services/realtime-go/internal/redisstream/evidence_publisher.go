@@ -6,18 +6,22 @@ import (
 	"fmt"
 
 	"lumos/realtime-go/internal/evidence"
+	"lumos/realtime-go/internal/meetinglease"
 	"lumos/realtime-go/internal/redisclient"
 )
 
 type EvidencePublisher struct {
 	redis *redisclient.Client
+	lease meetinglease.Lease
 }
 
 func NewEvidencePublisher(
-	redis *redisclient.Client,
+	redisClient *redisclient.Client,
+	lease meetinglease.Lease,
 ) *EvidencePublisher {
 	return &EvidencePublisher{
-		redis: redis,
+		redis: redisClient,
+		lease: lease,
 	}
 }
 
@@ -25,7 +29,21 @@ func (p *EvidencePublisher) Publish(
 	ctx context.Context,
 	turn evidence.Turn,
 ) (string, error) {
-	payload, err := json.Marshal(turn)
+	if turn.MeetingID !=
+		p.lease.MeetingID {
+
+		return "", fmt.Errorf(
+			"evidence meeting mismatch: lease=%q turn=%q",
+			p.lease.MeetingID,
+			turn.MeetingID,
+		)
+	}
+
+	payload, err :=
+		json.Marshal(
+			turn,
+		)
+
 	if err != nil {
 		return "", fmt.Errorf(
 			"marshal evidence turn: %w",
@@ -33,23 +51,35 @@ func (p *EvidencePublisher) Publish(
 		)
 	}
 
-	return p.redis.XAdd(
+	return p.redis.FencedXAdd(
 		ctx,
-		EvidenceStreamKey(turn.MeetingID),
-		map[string]any{
-			"event_type":     evidence.EventType,
-			"schema_version": evidence.SchemaVersion,
-			"event_id":       turn.EventID,
-			"payload":        string(payload),
-		},
-	)
-}
 
-func streamKey(
-	meetingID string,
-) string {
-	return fmt.Sprintf(
-		"lumos:meeting:{%s}:evidence",
-		meetingID,
+		meetinglease.LeaseKey(
+			p.lease.MeetingID,
+		),
+
+		meetinglease.FenceKey(
+			p.lease.MeetingID,
+		),
+
+		p.lease.Token,
+
+		p.lease.Fence,
+
+		EvidenceStreamKey(
+			turn.MeetingID,
+		),
+
+		map[string]any{
+			"event_type": evidence.EventType,
+
+			"schema_version": evidence.SchemaVersion,
+
+			"event_id": turn.EventID,
+
+			"payload": string(
+				payload,
+			),
+		},
 	)
 }

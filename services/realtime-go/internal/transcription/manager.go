@@ -19,6 +19,7 @@ import (
 
 	"lumos/realtime-go/internal/assemblyai"
 	"lumos/realtime-go/internal/evidence"
+	"lumos/realtime-go/internal/observability"
 )
 
 const (
@@ -40,6 +41,7 @@ type Manager struct {
 	assembly  *assemblyai.Client
 	evidence  *evidence.Dispatcher
 	logger    *slog.Logger
+	metrics   *observability.Metrics
 
 	mu     sync.Mutex
 	tracks map[string]*trackState
@@ -53,13 +55,22 @@ func NewManager(
 	assembly *assemblyai.Client,
 	evidenceDispatcher *evidence.Dispatcher,
 	logger *slog.Logger,
+	metrics ...*observability.Metrics,
 ) *Manager {
+	var metricsRecorder *observability.Metrics
+
+	if len(metrics) > 0 {
+		metricsRecorder =
+			metrics[0]
+	}
+
 	return &Manager{
 		ctx:       ctx,
 		meetingID: meetingID,
 		assembly:  assembly,
 		evidence:  evidenceDispatcher,
 		logger:    logger,
+		metrics:   metricsRecorder,
 		tracks:    make(map[string]*trackState),
 	}
 }
@@ -102,18 +113,42 @@ func (m *Manager) HandleTrackSubscribed(
 		cancel: cancel,
 	}
 
-	m.mu.Lock()
+	reserved, err :=
+		m.reserveTrack(
+			trackID,
+			state,
+		)
 
-	if _, exists := m.tracks[trackID]; exists {
-		m.mu.Unlock()
+	if err != nil {
 		cancel()
+
+		m.logger.Warn(
+			"microphone track rejected because meeting resource limit was reached",
+
+			"meetingId",
+			m.meetingID,
+
+			"trackId",
+			trackID,
+
+			"participant",
+			participant.Identity(),
+
+			"maxConcurrentTracks",
+			maxConcurrentMicrophoneTracks,
+
+			"error",
+			err,
+		)
 
 		return
 	}
 
-	m.tracks[trackID] = state
+	if !reserved {
+		cancel()
 
-	m.mu.Unlock()
+		return
+	}
 
 	m.wg.Go(func() {
 		m.runTrack(
@@ -153,6 +188,8 @@ func (m *Manager) Close() {
 		states = append(states, state)
 		delete(m.tracks, trackID)
 	}
+
+	m.updateActiveMicrophoneTracksMetricLocked()
 
 	m.mu.Unlock()
 
@@ -434,10 +471,16 @@ func (m *Manager) stopTrack(
 ) {
 	m.mu.Lock()
 
-	state, exists := m.tracks[trackID]
+	state, exists :=
+		m.tracks[trackID]
 
 	if exists {
-		delete(m.tracks, trackID)
+		delete(
+			m.tracks,
+			trackID,
+		)
+
+		m.updateActiveMicrophoneTracksMetricLocked()
 	}
 
 	m.mu.Unlock()
@@ -452,13 +495,45 @@ func (m *Manager) removeTrack(
 	state *trackState,
 ) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
-	current, exists := m.tracks[trackID]
+	current, exists :=
+		m.tracks[trackID]
 
-	if exists && current == state {
-		delete(m.tracks, trackID)
+	if exists &&
+		current == state {
+
+		delete(
+			m.tracks,
+			trackID,
+		)
+
+		m.updateActiveMicrophoneTracksMetricLocked()
 	}
 
+	m.mu.Unlock()
+
 	state.cancel()
+}
+
+// updateActiveMicrophoneTracksMetricLocked synchronizes this
+// meeting's contribution to the process-wide microphone gauge.
+//
+// The caller MUST hold m.mu.
+//
+// Keeping the metric update under the same mutex as the tracks
+// mutation preserves ordering between concurrent subscribe,
+// unsubscribe and worker-exit events.
+func (
+	m *Manager,
+) updateActiveMicrophoneTracksMetricLocked() {
+	if m.metrics == nil {
+		return
+	}
+
+	m.metrics.SetMeetingActiveMicrophoneTracks(
+		m.meetingID,
+		len(
+			m.tracks,
+		),
+	)
 }

@@ -63,6 +63,15 @@ func NewTurn(
 		return Turn{}, ErrEmptyText
 	}
 
+	if err :=
+		validateTurnTextSize(
+			text,
+		); err != nil {
+
+		return Turn{},
+			err
+	}
+
 	if capturedAt.IsZero() {
 		capturedAt = time.Now().UTC()
 	} else {

@@ -2,11 +2,12 @@ package meetingactor
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"lumos/realtime-go/internal/evidence"
+	"lumos/realtime-go/internal/observability"
 	"lumos/realtime-go/internal/semantics"
 )
 
@@ -14,30 +15,40 @@ type Actor struct {
 	meetingID string
 
 	extractor semantics.Extractor
-	publisher SemanticPublisher
 
 	logger *slog.Logger
-}
 
-type SemanticPublisher interface {
-	Publish(
-		ctx context.Context,
-		meetingID string,
-		observation semantics.Observation,
-	) (string, error)
+	metrics *observability.Metrics
+
+	// Consumer currently invokes Actor serially.
+	//
+	// These values are only committed after an
+	// evidence event has been successfully processed.
+	previousTurn         *evidence.Turn
+	previousObservations []semantics.Observation
 }
 
 func New(
 	meetingID string,
 	extractor semantics.Extractor,
-	publisher SemanticPublisher,
 	logger *slog.Logger,
+	metrics ...*observability.Metrics,
 ) *Actor {
+	var metricsRecorder *observability.Metrics
+
+	if len(metrics) > 0 {
+		metricsRecorder =
+			metrics[0]
+	}
+
 	return &Actor{
 		meetingID: meetingID,
+
 		extractor: extractor,
-		publisher: publisher,
-		logger:    logger,
+
+		logger: logger,
+
+		metrics: metricsRecorder,
 	}
 }
 
@@ -45,114 +56,253 @@ func (a *Actor) HandleEvidence(
 	ctx context.Context,
 	payload string,
 ) error {
-	var turn evidence.Turn
-
-	if err := json.Unmarshal(
-		[]byte(payload),
-		&turn,
-	); err != nil {
-		return fmt.Errorf(
-			"decode evidence turn: %w",
-			err,
+	prepared, err :=
+		a.PrepareEvidence(
+			ctx,
+			payload,
 		)
-	}
 
-	if turn.MeetingID != a.meetingID {
-		return fmt.Errorf(
-			"meeting mismatch: expected %q, got %q",
-			a.meetingID,
-			turn.MeetingID,
-		)
-	}
-
-	if turn.SchemaVersion != evidence.SchemaVersion {
-		return fmt.Errorf(
-			"unsupported evidence schema version: %d",
-			turn.SchemaVersion,
-		)
-	}
-
-	a.logger.Info(
-		"meeting actor accepted evidence",
-		"meetingId", turn.MeetingID,
-		"eventId", turn.EventID,
-		"participantId", turn.ParticipantID,
-		"turnOrder", turn.TurnOrder,
-	)
-
-	candidates, err := a.extractor.Extract(
-		ctx,
-		turn,
-	)
 	if err != nil {
-		return fmt.Errorf(
-			"extract semantics: %w",
-			err,
-		)
+		return err
 	}
 
-	for _, candidate := range candidates {
-		// Grounding validation happens before the candidate
-		// is allowed to become a trusted domain observation.
-		if err := semantics.ValidateGrounding(
+	a.commitPrepared(
+		prepared,
+	)
+
+	return nil
+}
+
+func (a *Actor) buildObservation(
+	candidate semantics.Candidate,
+	input semantics.EvidenceContext,
+) (
+	semantics.Observation,
+	bool,
+	error,
+) {
+	if candidate.RefinesPrevious {
+		candidate = semantics.ResolveSpeakerOwner(
 			candidate,
-			turn.Text,
-		); err != nil {
-			a.logger.Warn(
-				"semantic candidate failed grounding",
-				"meetingId", turn.MeetingID,
-				"eventId", turn.EventID,
-				"kind", candidate.Kind,
-				"error", err,
+			input.GroundingText(),
+			input.Current.ParticipantID,
+		)
+
+		if !input.HasPrevious() {
+			return semantics.Observation{},
+				false,
+				fmt.Errorf(
+					"candidate claims previous refinement without adjacent evidence",
+				)
+		}
+
+		supersedesID :=
+			a.findSupersededObservation(
+				candidate,
 			)
 
-			continue
+		if supersedesID == "" {
+			// Fail closed.
+			//
+			// If the model says "this refines previous"
+			// but we cannot deterministically identify
+			// the previous observation, publishing it as
+			// a new item would create false duplicates.
+			return semantics.Observation{},
+				false,
+				fmt.Errorf(
+					"no deterministic previous observation matches refinement",
+				)
+		}
+
+		if err :=
+			semantics.ValidateGroundingForSpeaker(
+				candidate,
+				input.GroundingText(),
+				input.Current.ParticipantID,
+			); err != nil {
+
+			return semantics.Observation{},
+				false,
+				err
 		}
 
 		observation, err :=
-			candidate.ToObservation(turn)
-
-		if err != nil {
-			// Fail closed.
-			//
-			// Invalid LLM semantic output must not become
-			// domain state, but it also must not poison the
-			// evidence queue forever.
-			a.logger.Warn(
-				"semantic candidate rejected",
-				"meetingId", turn.MeetingID,
-				"eventId", turn.EventID,
-				"kind", candidate.Kind,
-				"error", err,
+			candidate.ToContextObservation(
+				input,
+				supersedesID,
 			)
 
+		if err != nil {
+			return semantics.Observation{},
+				false,
+				err
+		}
+
+		return observation,
+			true,
+			nil
+	}
+
+	// A normal candidate must be grounded solely in
+	// the current turn. Previous context cannot lend
+	// facts to a brand-new observation.
+	candidate = semantics.ResolveSpeakerOwner(
+		candidate,
+		input.Current.Text,
+		input.Current.ParticipantID,
+	)
+
+	if err :=
+		semantics.ValidateGroundingForSpeaker(
+			candidate,
+			input.Current.Text,
+			input.Current.ParticipantID,
+		); err != nil {
+
+		return semantics.Observation{},
+			false,
+			err
+	}
+
+	observation, err :=
+		candidate.ToObservation(
+			input.Current,
+		)
+
+	if err != nil {
+		return semantics.Observation{},
+			false,
+			err
+	}
+
+	return observation,
+		true,
+		nil
+}
+
+func (a *Actor) findSupersededObservation(
+	candidate semantics.Candidate,
+) string {
+	matches :=
+		make(
+			[]semantics.Observation,
+			0,
+			1,
+		)
+
+	for _, previous := range a.previousObservations {
+
+		if previous.Kind !=
+			candidate.Kind {
 			continue
 		}
 
-		streamID, err := a.publisher.Publish(
-			ctx,
-			a.meetingID,
-			observation,
-		)
-		if err != nil {
-			return fmt.Errorf(
-				"publish semantic observation: %w",
-				err,
-			)
+		switch candidate.Kind {
+		case semantics.KindCommitment:
+			if !strings.EqualFold(
+				strings.TrimSpace(
+					previous.Owner,
+				),
+				strings.TrimSpace(
+					candidate.Owner,
+				),
+			) {
+				continue
+			}
+
+		case semantics.KindDecision:
+			// A previous turn may contain multiple
+			// decisions. We only accept a revision
+			// when exactly one deterministic match
+			// survives this filter.
+
+		default:
+			// Revision semantics for proposal/question
+			// are intentionally not enabled yet.
+			continue
 		}
 
-		a.logger.Info(
-			"semantic observation published",
-			"meetingId", a.meetingID,
-			"observationId", observation.ID,
-			"kind", observation.Kind,
-			"summary", observation.Summary,
-			"owner", observation.Owner,
-			"dueText", observation.DueText,
-			"confidence", observation.Confidence,
-			"streamId", streamID,
+		matches =
+			append(
+				matches,
+				previous,
+			)
+	}
+
+	if len(matches) != 1 {
+		return ""
+	}
+
+	return matches[0].ID
+}
+
+func (a *Actor) ContextCheckpoint(
+	evidenceStreamID string,
+) ContextCheckpoint {
+	checkpoint := ContextCheckpoint{
+		SchemaVersion: ContextCheckpointSchemaVersion,
+
+		MeetingID: a.meetingID,
+
+		EvidenceStreamID: evidenceStreamID,
+
+		Observations: append(
+			[]semantics.Observation(nil),
+			a.previousObservations...,
+		),
+	}
+
+	if a.previousTurn != nil {
+		checkpoint.Turn =
+			*a.previousTurn
+	}
+
+	return checkpoint
+}
+
+func (a *Actor) RestoreContext(
+	checkpoint ContextCheckpoint,
+) error {
+	if err := checkpoint.Validate(); err != nil {
+		return err
+	}
+
+	if checkpoint.MeetingID !=
+		a.meetingID {
+
+		return fmt.Errorf(
+			"actor context meeting mismatch: expected %q, got %q",
+			a.meetingID,
+			checkpoint.MeetingID,
 		)
 	}
+
+	turnCopy :=
+		checkpoint.Turn
+
+	a.previousTurn =
+		&turnCopy
+
+	a.previousObservations =
+		append(
+			[]semantics.Observation(nil),
+			checkpoint.Observations...,
+		)
+
+	a.logger.Info(
+		"meeting actor context restored",
+		"meetingId",
+		a.meetingID,
+		"eventId",
+		turnCopy.EventID,
+		"evidenceStreamId",
+		checkpoint.EvidenceStreamID,
+		"observationCount",
+		len(
+			checkpoint.Observations,
+		),
+	)
 
 	return nil
 }

@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	httpTimeout       = 8 * time.Second
-	maxErrorBodyBytes = 4 * 1024
+	httpTimeout         = 8 * time.Second
+	maxErrorBodyBytes   = 4 * 1024
+	maxSuccessBodyBytes = 64 * 1024
 )
 
 var (
@@ -27,6 +28,10 @@ var (
 
 	ErrEmptyContent = errors.New(
 		"groq returned empty content",
+	)
+
+	ErrResponseBodyTooLarge = errors.New(
+		"groq response body exceeds maximum size",
 	)
 )
 
@@ -43,14 +48,20 @@ func New(
 	baseURL string,
 	model string,
 ) (*Extractor, error) {
-	apiKey = strings.TrimSpace(apiKey)
+	apiKey = strings.TrimSpace(
+		apiKey,
+	)
 
 	baseURL = strings.TrimRight(
-		strings.TrimSpace(baseURL),
+		strings.TrimSpace(
+			baseURL,
+		),
 		"/",
 	)
 
-	model = strings.TrimSpace(model)
+	model = strings.TrimSpace(
+		model,
+	)
 
 	if apiKey == "" {
 		return nil, errors.New(
@@ -71,9 +82,11 @@ func New(
 	}
 
 	return &Extractor{
-		apiKey:  apiKey,
+		apiKey: apiKey,
+
 		baseURL: baseURL,
-		model:   model,
+
+		model: model,
 
 		httpClient: &http.Client{
 			Timeout: httpTimeout,
@@ -82,7 +95,8 @@ func New(
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
+	Role string `json:"role"`
+
 	Content string `json:"content"`
 }
 
@@ -97,13 +111,16 @@ type chatRequest struct {
 }
 
 type responseFormat struct {
-	Type       string     `json:"type"`
+	Type string `json:"type"`
+
 	JSONSchema jsonSchema `json:"json_schema"`
 }
 
 type jsonSchema struct {
-	Name   string         `json:"name"`
-	Strict bool           `json:"strict"`
+	Name string `json:"name"`
+
+	Strict bool `json:"strict"`
+
 	Schema map[string]any `json:"schema"`
 }
 
@@ -119,23 +136,54 @@ type semanticResponse struct {
 	Observations []semantics.Candidate `json:"observations"`
 }
 
+// Extract preserves the original single-turn extraction path.
+//
+// Existing callers can continue using Extract exactly as before.
 func (e *Extractor) Extract(
 	ctx context.Context,
 	turn evidence.Turn,
+) ([]semantics.Candidate, error) {
+	return e.extract(
+		ctx,
+		buildEvidencePrompt(
+			turn,
+		),
+	)
+}
+
+// ExtractContext enables bounded adjacent-turn semantic extraction.
+//
+// The supplied EvidenceContext has already been constrained by the
+// semantics package to an eligible previous/current turn pair.
+func (e *Extractor) ExtractContext(
+	ctx context.Context,
+	input semantics.EvidenceContext,
+) ([]semantics.Candidate, error) {
+	return e.extract(
+		ctx,
+		buildContextPrompt(
+			input,
+		),
+	)
+}
+
+func (e *Extractor) extract(
+	ctx context.Context,
+	userPrompt string,
 ) ([]semantics.Candidate, error) {
 	requestBody := chatRequest{
 		Model: e.model,
 
 		Messages: []chatMessage{
 			{
-				Role:    "system",
+				Role: "system",
+
 				Content: semanticSystemPrompt,
 			},
 			{
 				Role: "user",
-				Content: buildEvidencePrompt(
-					turn,
-				),
+
+				Content: userPrompt,
 			},
 		},
 
@@ -151,8 +199,9 @@ func (e *Extractor) Extract(
 			},
 		},
 
-		// Extraction is constrained enough that we don't
-		// need expensive reasoning for every meeting turn.
+		// Extraction is deliberately constrained enough that
+		// expensive reasoning is not required for every
+		// realtime transcript turn.
 		ReasoningEffort: "low",
 	}
 
@@ -166,12 +215,17 @@ func (e *Extractor) Extract(
 		)
 	}
 
-	request, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		e.baseURL+"/chat/completions",
-		bytes.NewReader(body),
-	)
+	request, err :=
+		http.NewRequestWithContext(
+			ctx,
+			http.MethodPost,
+			e.baseURL+
+				"/chat/completions",
+			bytes.NewReader(
+				body,
+			),
+		)
+
 	if err != nil {
 		return nil, fmt.Errorf(
 			"create groq request: %w",
@@ -189,64 +243,104 @@ func (e *Extractor) Extract(
 		"application/json",
 	)
 
-	response, err := e.httpClient.Do(
-		request,
-	)
+	response, err :=
+		e.httpClient.Do(
+			request,
+		)
+
 	if err != nil {
 		return nil, fmt.Errorf(
 			"call groq api: %w",
 			err,
 		)
 	}
+
 	defer response.Body.Close()
 
 	if response.StatusCode < 200 ||
 		response.StatusCode >= 300 {
-		errorBody, _ := io.ReadAll(
-			io.LimitReader(
-				response.Body,
-				maxErrorBodyBytes,
-			),
-		)
+
+		errorBody, _ :=
+			io.ReadAll(
+				io.LimitReader(
+					response.Body,
+					maxErrorBodyBytes,
+				),
+			)
 
 		return nil, fmt.Errorf(
 			"groq returned status %d: %s",
 			response.StatusCode,
 			strings.TrimSpace(
-				string(errorBody),
+				string(
+					errorBody,
+				),
 			),
+		)
+	}
+
+	responseBody, err := io.ReadAll(
+		io.LimitReader(
+			response.Body,
+			maxSuccessBodyBytes+1,
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"read groq response: %w",
+			err,
+		)
+	}
+
+	if len(responseBody) >
+		maxSuccessBodyBytes {
+
+		return nil, fmt.Errorf(
+			"%w: got %d bytes, max %d",
+			ErrResponseBodyTooLarge,
+			len(responseBody),
+			maxSuccessBodyBytes,
 		)
 	}
 
 	var completion chatResponse
 
-	if err := json.NewDecoder(
-		response.Body,
-	).Decode(&completion); err != nil {
+	if err := json.Unmarshal(
+		responseBody,
+		&completion,
+	); err != nil {
 		return nil, fmt.Errorf(
 			"decode groq response: %w",
 			err,
 		)
 	}
 
-	if len(completion.Choices) == 0 {
-		return nil, ErrEmptyResponse
+	if len(
+		completion.Choices,
+	) == 0 {
+		return nil,
+			ErrEmptyResponse
 	}
 
-	content := strings.TrimSpace(
-		completion.Choices[0].
-			Message.
-			Content,
-	)
+	content :=
+		strings.TrimSpace(
+			completion.
+				Choices[0].
+				Message.
+				Content,
+		)
 
 	if content == "" {
-		return nil, ErrEmptyContent
+		return nil,
+			ErrEmptyContent
 	}
 
 	var result semanticResponse
 
 	if err := json.Unmarshal(
-		[]byte(content),
+		[]byte(
+			content,
+		),
 		&result,
 	); err != nil {
 		return nil, fmt.Errorf(
@@ -255,7 +349,8 @@ func (e *Extractor) Extract(
 		)
 	}
 
-	return result.Observations, nil
+	return result.Observations,
+		nil
 }
 
 func buildEvidencePrompt(
@@ -266,5 +361,30 @@ func buildEvidencePrompt(
 			"Final transcript evidence:\n%s",
 		turn.ParticipantID,
 		turn.Text,
+	)
+}
+
+func buildContextPrompt(
+	input semantics.EvidenceContext,
+) string {
+	if input.Previous == nil {
+		return buildEvidencePrompt(
+			input.Current,
+		)
+	}
+
+	return fmt.Sprintf(
+		"Speaker identity: %s\n"+
+			"Previous adjacent final transcript evidence "+
+			"(context only):\n%s\n\n"+
+			"Current final transcript evidence:\n%s\n\n"+
+			"Use the previous turn only to resolve whether "+
+			"the current turn completes or refines it. "+
+			"Do not repeat an observation from the previous "+
+			"turn unless the current turn materially adds "+
+			"new grounded information.",
+		input.Current.ParticipantID,
+		input.Previous.Text,
+		input.Current.Text,
 	)
 }

@@ -1,5 +1,7 @@
 package groqsemantic
 
+const maxSemanticResponseItems = 16
+
 func semanticSchema() map[string]any {
 	return map[string]any{
 		"type":                 "object",
@@ -7,7 +9,8 @@ func semanticSchema() map[string]any {
 
 		"properties": map[string]any{
 			"observations": map[string]any{
-				"type": "array",
+				"type":     "array",
+				"maxItems": maxSemanticResponseItems,
 
 				"items": map[string]any{
 					"type":                 "object",
@@ -24,6 +27,10 @@ func semanticSchema() map[string]any {
 								"commitment",
 								"question",
 							},
+						},
+
+						"refinesPrevious": map[string]any{
+							"type": "boolean",
 						},
 
 						"summary": map[string]any{
@@ -55,6 +62,7 @@ func semanticSchema() map[string]any {
 						"owner",
 						"dueText",
 						"explicit",
+						"refinesPrevious",
 						"confidence",
 					},
 				},

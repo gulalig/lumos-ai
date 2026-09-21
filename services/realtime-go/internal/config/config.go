@@ -11,7 +11,6 @@ import (
 type Config struct {
 	RedisURL string
 
-	LiveKitRoom        string
 	LiveKitBotIdentity string
 	LiveKitURL         string
 	LiveKitAPIKey      string
@@ -31,19 +30,38 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	loadDotEnv()
+	if err := loadDotEnv(); err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
-		RedisURL: os.Getenv("REDIS_URL"),
+		RedisURL: strings.TrimSpace(
+			os.Getenv("REDIS_URL"),
+		),
 
-		LiveKitRoom:        os.Getenv("LIVEKIT_ROOM"),
-		LiveKitBotIdentity: os.Getenv("LIVEKIT_BOT_IDENTITY"),
-		LiveKitURL:         os.Getenv("LIVEKIT_URL"),
-		LiveKitAPIKey:      os.Getenv("LIVEKIT_API_KEY"),
-		LiveKitAPISecret:   os.Getenv("LIVEKIT_API_SECRET"),
+		LiveKitBotIdentity: strings.TrimSpace(
+			os.Getenv("LIVEKIT_BOT_IDENTITY"),
+		),
 
-		AssemblyAIAPIKey:       os.Getenv("ASSEMBLYAI_API_KEY"),
-		AssemblyAIStreamingURL: os.Getenv("ASSEMBLYAI_STREAMING_URL"),
+		LiveKitURL: strings.TrimSpace(
+			os.Getenv("LIVEKIT_URL"),
+		),
+
+		LiveKitAPIKey: strings.TrimSpace(
+			os.Getenv("LIVEKIT_API_KEY"),
+		),
+
+		LiveKitAPISecret: strings.TrimSpace(
+			os.Getenv("LIVEKIT_API_SECRET"),
+		),
+
+		AssemblyAIAPIKey: strings.TrimSpace(
+			os.Getenv("ASSEMBLYAI_API_KEY"),
+		),
+
+		AssemblyAIStreamingURL: strings.TrimSpace(
+			os.Getenv("ASSEMBLYAI_STREAMING_URL"),
+		),
 
 		SemanticProvider: strings.ToLower(
 			strings.TrimSpace(
@@ -51,14 +69,39 @@ func Load() (Config, error) {
 			),
 		),
 
-		GroqAPIKey:        os.Getenv("GROQ_API_KEY"),
-		GroqBaseURL:       os.Getenv("GROQ_BASE_URL"),
-		GroqModel:         os.Getenv("GROQ_MODEL"),
-		GroqFallbackModel: os.Getenv("GROQ_FALLBACK_MODEL"),
+		GroqAPIKey: strings.TrimSpace(
+			os.Getenv("GROQ_API_KEY"),
+		),
 
-		RealtimePort: os.Getenv("REALTIME_PORT"),
+		GroqBaseURL: strings.TrimSpace(
+			os.Getenv("GROQ_BASE_URL"),
+		),
+
+		GroqModel: strings.TrimSpace(
+			os.Getenv("GROQ_MODEL"),
+		),
+
+		GroqFallbackModel: strings.TrimSpace(
+			os.Getenv("GROQ_FALLBACK_MODEL"),
+		),
+
+		RealtimePort: strings.TrimSpace(
+			os.Getenv("REALTIME_PORT"),
+		),
 	}
 
+	applyDefaults(&cfg)
+
+	if err := validate(cfg); err != nil {
+		return Config{}, err
+	}
+
+	return cfg, nil
+}
+
+func applyDefaults(
+	cfg *Config,
+) {
 	if cfg.RealtimePort == "" {
 		cfg.RealtimePort = "8081"
 	}
@@ -86,20 +129,28 @@ func Load() (Config, error) {
 		cfg.GroqFallbackModel =
 			"openai/gpt-oss-120b"
 	}
+}
 
+func validate(
+	cfg Config,
+) error {
 	required := map[string]string{
-		"REDIS_URL":            cfg.RedisURL,
-		"LIVEKIT_ROOM":         cfg.LiveKitRoom,
+		"REDIS_URL": cfg.RedisURL,
+
 		"LIVEKIT_BOT_IDENTITY": cfg.LiveKitBotIdentity,
-		"LIVEKIT_URL":          cfg.LiveKitURL,
-		"LIVEKIT_API_KEY":      cfg.LiveKitAPIKey,
-		"LIVEKIT_API_SECRET":   cfg.LiveKitAPISecret,
-		"ASSEMBLYAI_API_KEY":   cfg.AssemblyAIAPIKey,
+
+		"LIVEKIT_URL": cfg.LiveKitURL,
+
+		"LIVEKIT_API_KEY": cfg.LiveKitAPIKey,
+
+		"LIVEKIT_API_SECRET": cfg.LiveKitAPISecret,
+
+		"ASSEMBLYAI_API_KEY": cfg.AssemblyAIAPIKey,
 	}
 
 	for name, value := range required {
-		if strings.TrimSpace(value) == "" {
-			return Config{}, fmt.Errorf(
+		if value == "" {
+			return fmt.Errorf(
 				"required environment variable %s is missing",
 				name,
 			)
@@ -108,32 +159,71 @@ func Load() (Config, error) {
 
 	switch cfg.SemanticProvider {
 	case "groq":
-		if strings.TrimSpace(cfg.GroqAPIKey) == "" {
-			return Config{}, fmt.Errorf(
+		if cfg.GroqAPIKey == "" {
+			return fmt.Errorf(
 				"GROQ_API_KEY is required when SEMANTIC_PROVIDER=groq",
 			)
 		}
 
+		if cfg.GroqBaseURL == "" {
+			return fmt.Errorf(
+				"GROQ_BASE_URL is required when SEMANTIC_PROVIDER=groq",
+			)
+		}
+
+		if cfg.GroqModel == "" {
+			return fmt.Errorf(
+				"GROQ_MODEL is required when SEMANTIC_PROVIDER=groq",
+			)
+		}
+
+		if cfg.GroqFallbackModel == "" {
+			return fmt.Errorf(
+				"GROQ_FALLBACK_MODEL is required when SEMANTIC_PROVIDER=groq",
+			)
+		}
+
 	default:
-		return Config{}, fmt.Errorf(
+		return fmt.Errorf(
 			"unsupported semantic provider %q",
 			cfg.SemanticProvider,
 		)
 	}
 
-	return cfg, nil
+	return nil
 }
 
-func loadDotEnv() {
+func loadDotEnv() error {
 	candidates := []string{
 		".env",
 		"../../.env",
 	}
 
 	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			_ = godotenv.Load(path)
-			return
+		_, err := os.Stat(path)
+
+		if err == nil {
+			if err := godotenv.Load(
+				path,
+			); err != nil {
+				return fmt.Errorf(
+					"load environment file %s: %w",
+					path,
+					err,
+				)
+			}
+
+			return nil
+		}
+
+		if !os.IsNotExist(err) {
+			return fmt.Errorf(
+				"inspect environment file %s: %w",
+				path,
+				err,
+			)
 		}
 	}
+
+	return nil
 }

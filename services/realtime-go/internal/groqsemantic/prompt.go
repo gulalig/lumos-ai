@@ -39,11 +39,24 @@ Rules:
 - A decision requires explicit evidence of agreement or decision.
 - A commitment requires explicit responsibility.
 - Never convert a proposal into a decision.
-- Never infer an owner.
+- Never infer an owner from ambiguous conversation context.
+- For an explicit first-person commitment such as "I will", "I'll", "I am going to", "I commit to", or "I promise to", use the supplied Speaker identity EXACTLY as owner.
+- Never output "I", "me", "speaker", or an invented human name as owner for a first-person commitment.
+- Do not use Speaker identity as owner unless the supplied evidence explicitly contains that first-person commitment.
 - Preserve deadline wording in dueText exactly as stated.
 - If no deadline exists, dueText must be empty.
 - If no owner exists, owner must be empty.
 - Summary may normalize grammar but must preserve meaning.
 - confidence must be between 0 and 1.
 - When uncertain, prefer unknown.
+- Previous evidence, when supplied, is context only.
+- Do not re-emit an already complete previous observation unless the current turn materially completes, clarifies, or refines it.
+- A short current fragment such as "on Monday" may refine a previous commitment only when the supplied previous evidence clearly contains the action and owner.
+- Every named owner, deadline, decision marker, and material fact must be present somewhere in the supplied evidence.
+- The only owner-grounding exception is trusted Speaker identity for an explicit first-person commitment. For a refinement, that first-person commitment may be in the eligible adjacent previous turn.
+- refinesPrevious must be false when no previous evidence is supplied.
+- Set refinesPrevious=true only when the CURRENT turn materially completes, corrects, or enriches an observation clearly present in the supplied previous adjacent evidence.
+- Do not set refinesPrevious=true merely because the two turns discuss a similar topic.
+- When refinesPrevious=true, reconstruct the complete observation using only facts grounded across the supplied previous and current evidence.
+- When refinesPrevious=false, every fact in the observation must be grounded in the CURRENT evidence alone.
 `

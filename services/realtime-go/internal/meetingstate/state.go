@@ -2,13 +2,24 @@ package meetingstate
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"lumos/realtime-go/internal/semantics"
 )
 
-var ErrMissingMeetingID = errors.New(
-	"meeting id is required",
+var (
+	ErrMissingMeetingID = errors.New(
+		"meeting id is required",
+	)
+
+	ErrSupersededObservationNotFound = errors.New(
+		"superseded observation was not found in current meeting state",
+	)
+
+	ErrSupersededKindMismatch = errors.New(
+		"superseded observation kind does not match replacement kind",
+	)
 )
 
 type Item struct {
@@ -21,7 +32,12 @@ type Item struct {
 	DueText string `json:"dueText,omitempty"`
 
 	EvidenceEventID string `json:"evidenceEventId"`
-	EvidenceText    string `json:"evidenceText"`
+
+	SupportingEvidenceEventIDs []string `json:"supportingEvidenceEventIds,omitempty"`
+
+	EvidenceText string `json:"evidenceText"`
+
+	SupersedesObservationID string `json:"supersedesObservationId,omitempty"`
 
 	Confidence float64 `json:"confidence"`
 }
@@ -55,9 +71,7 @@ func New(
 		Proposals:   make([]Item, 0),
 		Questions:   make([]Item, 0),
 
-		applied: make(
-			map[string]struct{},
-		),
+		applied: make(map[string]struct{}),
 	}, nil
 }
 
@@ -76,9 +90,17 @@ func (s *State) Apply(
 		return false, nil
 	}
 
-	item := Item{
-		ID: observation.ID,
+	if observation.SupersedesObservationID != "" {
+		if err := s.removeSupersededObservation(
+			observation.SupersedesObservationID,
+			observation.Kind,
+		); err != nil {
+			return false, err
+		}
+	}
 
+	item := Item{
+		ID:   observation.ID,
 		Kind: observation.Kind,
 
 		Summary: observation.Summary,
@@ -86,7 +108,15 @@ func (s *State) Apply(
 		DueText: observation.DueText,
 
 		EvidenceEventID: observation.EvidenceEventID,
-		EvidenceText:    observation.EvidenceText,
+
+		SupportingEvidenceEventIDs: append(
+			[]string(nil),
+			observation.SupportingEvidenceEventIDs...,
+		),
+
+		EvidenceText: observation.EvidenceText,
+
+		SupersedesObservationID: observation.SupersedesObservationID,
 
 		Confidence: observation.Confidence,
 	}
@@ -121,7 +151,129 @@ func (s *State) Apply(
 	}
 
 	s.applied[observation.ID] = struct{}{}
+
+	// Version tracks accepted semantic events,
+	// not the number of currently visible items.
+	//
+	// A revision therefore increments Version even
+	// though it replaces an older visible item.
 	s.Version++
 
 	return true, nil
+}
+
+func (s *State) removeSupersededObservation(
+	observationID string,
+	replacementKind semantics.Kind,
+) error {
+	observationID = strings.TrimSpace(
+		observationID,
+	)
+
+	if observationID == "" {
+		return fmt.Errorf(
+			"%w: empty observation id",
+			ErrSupersededObservationNotFound,
+		)
+	}
+
+	existingKind, found := s.findObservationKind(
+		observationID,
+	)
+
+	if !found {
+		return fmt.Errorf(
+			"%w: %s",
+			ErrSupersededObservationNotFound,
+			observationID,
+		)
+	}
+
+	if existingKind != replacementKind {
+		return fmt.Errorf(
+			"%w: previous=%q replacement=%q",
+			ErrSupersededKindMismatch,
+			existingKind,
+			replacementKind,
+		)
+	}
+
+	switch existingKind {
+	case semantics.KindDecision:
+		s.Decisions = removeItemByID(
+			s.Decisions,
+			observationID,
+		)
+
+	case semantics.KindCommitment:
+		s.Commitments = removeItemByID(
+			s.Commitments,
+			observationID,
+		)
+
+	case semantics.KindProposal:
+		s.Proposals = removeItemByID(
+			s.Proposals,
+			observationID,
+		)
+
+	case semantics.KindQuestion:
+		s.Questions = removeItemByID(
+			s.Questions,
+			observationID,
+		)
+
+	default:
+		return semantics.ErrUnsupportedKind
+	}
+
+	return nil
+}
+
+func (s *State) findObservationKind(
+	observationID string,
+) (semantics.Kind, bool) {
+	for _, item := range s.Decisions {
+		if item.ID == observationID {
+			return item.Kind, true
+		}
+	}
+
+	for _, item := range s.Commitments {
+		if item.ID == observationID {
+			return item.Kind, true
+		}
+	}
+
+	for _, item := range s.Proposals {
+		if item.ID == observationID {
+			return item.Kind, true
+		}
+	}
+
+	for _, item := range s.Questions {
+		if item.ID == observationID {
+			return item.Kind, true
+		}
+	}
+
+	return "", false
+}
+
+func removeItemByID(
+	items []Item,
+	observationID string,
+) []Item {
+	for index, item := range items {
+		if item.ID != observationID {
+			continue
+		}
+
+		return append(
+			items[:index],
+			items[index+1:]...,
+		)
+	}
+
+	return items
 }

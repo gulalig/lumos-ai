@@ -19,3 +19,12 @@ func SemanticStreamKey(
 		meetingID,
 	)
 }
+
+func EvidenceDeadLetterStreamKey(
+	meetingID string,
+) string {
+	return fmt.Sprintf(
+		"lumos:meeting:{%s}:evidence-dlq",
+		meetingID,
+	)
+}
