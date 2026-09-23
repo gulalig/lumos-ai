@@ -103,6 +103,34 @@ func (a *Actor) PrepareEvidence(
 			turn,
 		)
 
+	// Normal semantic context deliberately requires the same
+	// participant and track.
+	//
+	// There is one narrow exception:
+	//
+	// an immediately preceding ownerless commitment may be
+	// completed when another participant explicitly accepts
+	// ownership, for example:
+	//
+	//   participant A:
+	//     "Prepare the deployment checklist."
+	//
+	//   participant B:
+	//     "I'll own it."
+	//
+	// We only expose previous evidence through this path when
+	// exactly one previous commitment is unresolved because of
+	// a missing owner.
+	if !input.HasPrevious() &&
+		a.hasSingleOwnerlessCommitment() {
+
+		input =
+			semantics.NewOwnershipRefinementContext(
+				a.previousTurn,
+				turn,
+			)
+	}
+
 	extractionStarted :=
 		time.Now()
 

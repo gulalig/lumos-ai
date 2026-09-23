@@ -27,10 +27,19 @@ func ResolveSpeakerOwner(
 			speakerIdentity,
 		)
 
-	if speakerIdentity == "" ||
-		!containsExplicitFirstPersonCommitment(
+	if speakerIdentity == "" {
+		return candidate
+	}
+
+	hasSpeakerOwnershipEvidence :=
+		containsExplicitFirstPersonCommitment(
 			evidenceText,
-		) {
+		) ||
+			containsExplicitOwnershipAcceptance(
+				evidenceText,
+			)
+
+	if !hasSpeakerOwnershipEvidence {
 		return candidate
 	}
 

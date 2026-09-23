@@ -65,6 +65,87 @@ func NewEvidenceContext(
 	return context
 }
 
+func NewOwnershipRefinementContext(
+	previous *evidence.Turn,
+	current evidence.Turn,
+) EvidenceContext {
+	context :=
+		EvidenceContext{
+			Current: current,
+		}
+
+	if previous == nil {
+		return context
+	}
+
+	if previous.EventID == "" ||
+		current.EventID == "" {
+
+		return context
+	}
+
+	if previous.EventID ==
+		current.EventID {
+
+		return context
+	}
+
+	if previous.MeetingID == "" ||
+		current.MeetingID == "" ||
+		previous.MeetingID !=
+			current.MeetingID {
+
+		return context
+	}
+
+	if previous.ParticipantID == "" ||
+		current.ParticipantID == "" {
+
+		return context
+	}
+
+	// This path exists specifically for another
+	// participant answering an unresolved ownership
+	// question.
+	if previous.ParticipantID ==
+		current.ParticipantID {
+
+		return context
+	}
+
+	if previous.CapturedAt.IsZero() ||
+		current.CapturedAt.IsZero() {
+
+		return context
+	}
+
+	gap :=
+		current.CapturedAt.Sub(
+			previous.CapturedAt,
+		)
+
+	if gap < 0 ||
+		gap > MaxRefinementTurnGap {
+
+		return context
+	}
+
+	if !containsExplicitOwnershipAcceptance(
+		current.Text,
+	) {
+
+		return context
+	}
+
+	previousCopy :=
+		*previous
+
+	context.Previous =
+		&previousCopy
+
+	return context
+}
+
 func AreAdjacentTurns(
 	previous evidence.Turn,
 	current evidence.Turn,

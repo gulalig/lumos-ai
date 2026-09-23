@@ -106,13 +106,11 @@ func ValidateGroundingForSpeaker(
 			speakerIdentity,
 		)
 
-		if speaker != "" &&
-			owner == speaker &&
-			containsExplicitFirstPersonCommitment(
-				text,
-			) {
+		if speaker != "" && owner == speaker &&
+			(containsExplicitFirstPersonCommitment(text) || containsExplicitOwnershipAcceptance(text)) {
 
 			break
+
 		}
 
 		return ErrUngroundedOwner
@@ -124,10 +122,15 @@ func ValidateGroundingForSpeaker(
 func containsExplicitFirstPersonCommitment(
 	text string,
 ) bool {
-	padded :=
+	normalized :=
 		" " +
-			normalizeEvidence(
-				text,
+			strings.Join(
+				strings.Fields(
+					normalizeEvidence(
+						text,
+					),
+				),
+				" ",
 			) +
 			" "
 
@@ -143,7 +146,42 @@ func containsExplicitFirstPersonCommitment(
 	}
 
 	return containsAny(
-		padded,
+		normalized,
+		markers,
+	)
+}
+
+func containsExplicitOwnershipAcceptance(
+	text string,
+) bool {
+	normalized :=
+		" " +
+			strings.Join(
+				strings.Fields(
+					normalizeEvidence(
+						text,
+					),
+				),
+				" ",
+			) +
+			" "
+
+	markers := []string{
+		" i'll own it",
+		" i’ll own it",
+		" i will own it",
+		" i'll take it",
+		" i’ll take it",
+		" i will take it",
+		" i can take it",
+		" assign it to me",
+		" put it on me",
+		" that's mine",
+		" that’s mine",
+	}
+
+	return containsAny(
+		normalized,
 		markers,
 	)
 }

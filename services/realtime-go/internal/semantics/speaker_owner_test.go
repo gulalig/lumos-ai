@@ -83,3 +83,34 @@ func TestResolveSpeakerOwnerNeverOverwritesNamedOwner(
 		)
 	}
 }
+
+func TestResolveSpeakerOwnerFromOwnershipAcceptance(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	candidate := Candidate{
+		Kind: KindCommitment,
+
+		Summary: "Prepare the deployment checklist",
+
+		Owner: "I",
+
+		Explicit: true,
+
+		Confidence: 0.95,
+	}
+
+	got := ResolveSpeakerOwner(
+		candidate,
+		"I'll own it.",
+		"participant-alex",
+	)
+
+	if got.Owner != "participant-alex" {
+		t.Fatalf(
+			"expected trusted speaker owner, got %q",
+			got.Owner,
+		)
+	}
+}

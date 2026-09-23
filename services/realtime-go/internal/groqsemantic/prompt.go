@@ -26,7 +26,15 @@ commitment:
 A person explicitly accepts, promises, or is explicitly assigned
 an action.
 
-A commitment MUST have an explicit owner.
+A commitment requires an explicit action or responsibility,
+but the owner may be unknown or unstated.
+
+If the transcript clearly establishes that an action has been
+committed to or assigned but does not establish who owns it,
+emit the commitment with owner="".
+
+Do NOT downgrade an otherwise explicit commitment to unknown
+only because its owner is missing.
 
 question:
 A genuine open question.
@@ -37,7 +45,9 @@ Use when none of the above is strongly supported.
 Rules:
 
 - A decision requires explicit evidence of agreement or decision.
-- A commitment requires explicit responsibility.
+- A commitment requires an explicit committed or assigned action.
+- The commitment owner is optional when the evidence does not establish one.
+- Never invent a missing owner.
 - Never convert a proposal into a decision.
 - Never infer an owner from ambiguous conversation context.
 - For an explicit first-person commitment such as "I will", "I'll", "I am going to", "I commit to", or "I promise to", use the supplied Speaker identity EXACTLY as owner.

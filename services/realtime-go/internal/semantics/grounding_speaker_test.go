@@ -129,3 +129,34 @@ func TestSpeakerIdentityRequiresExplicitFirstPersonCommitment(
 		)
 	}
 }
+
+func TestOwnershipAcceptanceAllowsExactSpeakerIdentity(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	candidate := Candidate{
+		Kind: KindCommitment,
+
+		Summary: "Prepare the deployment checklist",
+
+		Owner: "participant-alex",
+
+		Explicit: true,
+
+		Confidence: 0.95,
+	}
+
+	err := ValidateGroundingForSpeaker(
+		candidate,
+		"Prepare the deployment checklist.\nI'll own it.",
+		"participant-alex",
+	)
+
+	if err != nil {
+		t.Fatalf(
+			"expected explicit ownership acceptance to ground speaker identity, got %v",
+			err,
+		)
+	}
+}

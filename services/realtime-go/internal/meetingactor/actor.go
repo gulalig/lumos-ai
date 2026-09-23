@@ -181,6 +181,28 @@ func (a *Actor) buildObservation(
 		nil
 }
 
+func (a *Actor) hasSingleOwnerlessCommitment() bool {
+	if len(
+		a.previousObservations,
+	) != 1 {
+
+		return false
+	}
+
+	previous :=
+		a.previousObservations[0]
+
+	if previous.Kind !=
+		semantics.KindCommitment {
+
+		return false
+	}
+
+	return strings.TrimSpace(
+		previous.Owner,
+	) == ""
+}
+
 func (a *Actor) findSupersededObservation(
 	candidate semantics.Candidate,
 ) string {
@@ -200,14 +222,34 @@ func (a *Actor) findSupersededObservation(
 
 		switch candidate.Kind {
 		case semantics.KindCommitment:
-			if !strings.EqualFold(
+			previousOwner :=
 				strings.TrimSpace(
 					previous.Owner,
-				),
+				)
+
+			candidateOwner :=
 				strings.TrimSpace(
 					candidate.Owner,
-				),
-			) {
+				)
+
+			// Existing ownership must not disappear.
+			if previousOwner != "" &&
+				candidateOwner == "" {
+
+				continue
+			}
+
+			// Missing ownership may be completed later.
+			//
+			// "" -> Alex   ✅
+			// Alex -> Alex ✅
+			// Alex -> Sam  ❌
+			if previousOwner != "" &&
+				!strings.EqualFold(
+					previousOwner,
+					candidateOwner,
+				) {
+
 				continue
 			}
 
