@@ -7,7 +7,16 @@ import (
 	"lumos/realtime-go/internal/evidence"
 )
 
-const MaxAdjacentTurnGap = 5 * time.Second
+const (
+	// Normal conversational adjacency.
+	MaxAdjacentTurnGap = 5 * time.Second
+
+	// A user may correct a commitment after a short pause.
+	//
+	// We only use this wider window when the CURRENT turn
+	// contains an explicit correction / revision cue.
+	MaxRefinementTurnGap = 45 * time.Second
+)
 
 // EvidenceContext contains the CURRENT durable evidence turn
 // plus, when safe, its immediately preceding evidence turn.
@@ -124,13 +133,69 @@ func AreAdjacentTurns(
 		return false
 	}
 
-	if gap >
+	// Normal adjacent conversation.
+	if gap <=
 		MaxAdjacentTurnGap {
+
+		return true
+	}
+
+	// Outside the normal adjacency window we fail closed
+	// unless the current turn explicitly looks like a
+	// correction / revision.
+	if gap >
+		MaxRefinementTurnGap {
 
 		return false
 	}
 
-	return true
+	return HasExplicitRefinementCue(
+		current.Text,
+	)
+}
+
+func HasExplicitRefinementCue(
+	text string,
+) bool {
+	normalized :=
+		strings.ToLower(
+			strings.TrimSpace(
+				text,
+			),
+		)
+
+	if normalized == "" {
+		return false
+	}
+
+	cues := []string{
+		"actually",
+		"correction",
+		"i mean",
+		"instead",
+		"rather",
+		"change that",
+		"change it",
+		"not friday",
+		"not monday",
+		"not tuesday",
+		"not wednesday",
+		"not thursday",
+		"not saturday",
+		"not sunday",
+	}
+
+	for _, cue := range cues {
+
+		if strings.Contains(
+			normalized,
+			cue,
+		) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (c EvidenceContext) HasPrevious() bool {

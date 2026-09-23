@@ -55,6 +55,7 @@ func ValidateGroundingForSpeaker(
 			text,
 			dueText,
 		) {
+
 		return ErrUngroundedDueText
 	}
 
@@ -72,8 +73,12 @@ func ValidateGroundingForSpeaker(
 			candidate.Owner,
 		)
 
+		// Missing owner is allowed.
+		//
+		// It represents an unresolved execution gap
+		// that the intervention engine may ask about.
 		if owner == "" {
-			return ErrMissingOwner
+			break
 		}
 
 		// Named owner explicitly present in transcript.
@@ -95,7 +100,8 @@ func ValidateGroundingForSpeaker(
 		// 1. candidate owner exactly equals trusted speaker metadata
 		// 2. evidence contains an explicit first-person commitment
 		//
-		// This preserves fail-closed owner grounding.
+		// This preserves fail-closed grounding for
+		// owner values that DO exist.
 		speaker := normalizeEvidence(
 			speakerIdentity,
 		)
@@ -105,6 +111,7 @@ func ValidateGroundingForSpeaker(
 			containsExplicitFirstPersonCommitment(
 				text,
 			) {
+
 			break
 		}
 

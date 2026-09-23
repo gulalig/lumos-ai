@@ -13,6 +13,7 @@ import (
 
 	"lumos/realtime-go/internal/assemblyai"
 	"lumos/realtime-go/internal/evidence"
+	"lumos/realtime-go/internal/intervention"
 	"lumos/realtime-go/internal/livekitclient"
 	"lumos/realtime-go/internal/meetingactor"
 	"lumos/realtime-go/internal/meetinglease"
@@ -199,6 +200,7 @@ func (r *Runtime) Run(
 		context.WithCancel(
 			parent,
 		)
+
 	defer stopMedia()
 
 	// Semantic processing intentionally has an
@@ -211,6 +213,7 @@ func (r *Runtime) Run(
 		context.WithCancel(
 			context.Background(),
 		)
+
 	defer stopProcessing()
 
 	// -------------------------------------------------------------------------
@@ -240,6 +243,7 @@ func (r *Runtime) Run(
 			meetingID,
 			logger,
 		)
+
 	if err != nil {
 		evidenceDispatcher.Close()
 
@@ -284,13 +288,31 @@ func (r *Runtime) Run(
 		)
 
 	// -------------------------------------------------------------------------
+	// Intervention consumer
+	// -------------------------------------------------------------------------
+
+	interventionSpeaker :=
+		intervention.NewLogSpeaker(
+			logger,
+		)
+
+	interventionConsumer :=
+		intervention.NewConsumer(
+			r.redisClient,
+			meetingID,
+			"realtime-intervention-"+uuid.NewString(),
+			interventionSpeaker,
+			logger,
+		)
+
+	// -------------------------------------------------------------------------
 	// Background semantic processing
 	// -------------------------------------------------------------------------
 
 	componentErr :=
 		make(
 			chan error,
-			2,
+			3,
 		)
 
 	var backgroundWG sync.WaitGroup
@@ -353,6 +375,38 @@ func (r *Runtime) Run(
 		select {
 		case componentErr <- fmt.Errorf(
 			"meeting actor consumer stopped unexpectedly",
+		):
+
+		case <-processingCtx.Done():
+		}
+	})
+
+	backgroundWG.Go(func() {
+		err :=
+			interventionConsumer.Run(
+				processingCtx,
+			)
+
+		if processingCtx.Err() != nil {
+			return
+		}
+
+		if err != nil {
+			select {
+			case componentErr <- fmt.Errorf(
+				"intervention consumer: %w",
+				err,
+			):
+
+			case <-processingCtx.Done():
+			}
+
+			return
+		}
+
+		select {
+		case componentErr <- fmt.Errorf(
+			"intervention consumer stopped unexpectedly",
 		):
 
 		case <-processingCtx.Done():
@@ -627,6 +681,7 @@ func waitForBackground(
 		time.NewTimer(
 			shutdownWaitTimeout,
 		)
+
 	defer timer.Stop()
 
 	select {

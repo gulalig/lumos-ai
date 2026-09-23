@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   Entity,
@@ -6,6 +7,7 @@ import {
   JoinColumn,
   ManyToOne,
   PrimaryColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 
@@ -17,9 +19,13 @@ export type WorkspaceMemberRole = 'owner' | 'admin' | 'member';
 @Entity({
   name: 'workspace_members',
 })
-@Index('workspace_members_workspace_user_key', ['workspaceId', 'userId'], {
-  unique: true,
-})
+@Unique('workspace_members_workspace_user_key', ['userId', 'workspaceId'])
+@Check(
+  'workspace_members_role_check',
+  `"role" IN ('owner', 'admin', 'member')`,
+)
+@Index('idx_workspace_members_workspace_id', ['workspaceId'])
+@Index('idx_workspace_members_user_id', ['userId'])
 export class WorkspaceMemberEntity {
   @PrimaryColumn('uuid')
   id!: string;
@@ -73,6 +79,7 @@ export class WorkspaceMemberEntity {
   })
   @JoinColumn({
     name: 'workspace_id',
+    foreignKeyConstraintName: 'workspace_members_workspace_id_fkey',
   })
   workspace!: WorkspaceEntity;
 
@@ -81,6 +88,7 @@ export class WorkspaceMemberEntity {
   })
   @JoinColumn({
     name: 'user_id',
+    foreignKeyConstraintName: 'workspace_members_user_id_fkey',
   })
   user!: UserEntity;
 }

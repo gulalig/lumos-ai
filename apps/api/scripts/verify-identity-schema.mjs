@@ -36,6 +36,20 @@ try {
     FROM meetings;
   `);
 
+  const participants = await client.query(`
+    SELECT
+      meeting_id,
+      workspace_member_id,
+      participant_type,
+      display_name,
+      livekit_identity,
+      joined_at,
+      left_at
+    FROM meeting_participants
+    ORDER BY joined_at DESC
+      LIMIT 10;
+  `);
+
   const workspaceColumn = await client.query(`
     SELECT
       column_name,
@@ -60,6 +74,8 @@ try {
   console.table(tables.rows);
 
   console.log('\n===== MEETING COUNT =====');
+  console.log('\n===== MEETING PARTICIPANTS =====');
+  console.table(participants.rows);
   console.table(meetings.rows);
 
   console.log('\n===== WORKSPACE COLUMN =====');

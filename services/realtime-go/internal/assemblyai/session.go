@@ -16,18 +16,20 @@ const (
 )
 
 type Turn struct {
-	TurnOrder  int    `json:"turn_order"`
-	EndOfTurn  bool   `json:"end_of_turn"`
-	Transcript string `json:"transcript"`
+	TurnOrder    int    `json:"turn_order"`
+	EndOfTurn    bool   `json:"end_of_turn"`
+	Transcript   string `json:"transcript"`
+	SpeakerLabel string `json:"speaker_label"`
 }
 
 type serverEvent struct {
 	Type string `json:"type"`
 	ID   string `json:"id"`
 
-	TurnOrder  int    `json:"turn_order"`
-	EndOfTurn  bool   `json:"end_of_turn"`
-	Transcript string `json:"transcript"`
+	TurnOrder    int    `json:"turn_order"`
+	EndOfTurn    bool   `json:"end_of_turn"`
+	Transcript   string `json:"transcript"`
+	SpeakerLabel string `json:"speaker_label"`
 }
 
 type TurnHandler func(Turn)
@@ -256,9 +258,10 @@ func (s *Session) readLoop(ctx context.Context) {
 			}
 
 			s.onTurn(Turn{
-				TurnOrder:  event.TurnOrder,
-				EndOfTurn:  event.EndOfTurn,
-				Transcript: event.Transcript,
+				TurnOrder:    event.TurnOrder,
+				EndOfTurn:    event.EndOfTurn,
+				Transcript:   event.Transcript,
+				SpeakerLabel: event.SpeakerLabel,
 			})
 
 		case "Termination":

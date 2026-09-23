@@ -60,7 +60,10 @@ func (c *Client) StreamingURL() (string, error) {
 
 	query := u.Query()
 	query.Set("sample_rate", "16000")
-	query.Set("speech_model", "u3-rt-pro")
+	query.Set("speech_model", "universal-3-5-pro")
+	query.Set("mode", "min_latency")
+	query.Set("voice_focus", "near-field")
+	query.Set("speaker_labels", "true")
 
 	u.RawQuery = query.Encode()
 

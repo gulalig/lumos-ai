@@ -83,7 +83,7 @@ export class MeetingParticipantEntity {
   })
   livekitIdentity!: string;
 
-  @Column({
+  @CreateDateColumn({
     name: 'joined_at',
     type: 'timestamptz',
   })
@@ -107,6 +107,7 @@ export class MeetingParticipantEntity {
   })
   @JoinColumn({
     name: 'meeting_id',
+    foreignKeyConstraintName: 'meeting_participants_meeting_id_fkey',
   })
   meeting!: MeetingEntity;
 
@@ -116,6 +117,7 @@ export class MeetingParticipantEntity {
   })
   @JoinColumn({
     name: 'workspace_member_id',
+    foreignKeyConstraintName: 'meeting_participants_workspace_member_id_fkey',
   })
   workspaceMember!: WorkspaceMemberEntity | null;
 }

@@ -2,7 +2,7 @@ import {
   Check,
   Column,
   CreateDateColumn,
-  Entity,
+  Entity, Index,
   JoinColumn,
   ManyToOne,
   PrimaryColumn,
@@ -13,6 +13,9 @@ import { WorkspaceEntity } from '../identity/entities/workspace.entity.js';
 
 export type MeetingStatus = 'created' | 'active' | 'ended';
 
+@Index('idx_meetings_status', ['status'])
+@Index('idx_meetings_created_at', ['createdAt'])
+@Index('idx_meetings_workspace_id', ['workspaceId'])
 @Entity({
   name: 'meetings',
 })
@@ -67,6 +70,7 @@ export class MeetingEntity {
   })
   @JoinColumn({
     name: 'workspace_id',
+    foreignKeyConstraintName: 'meetings_workspace_id_fkey',
   })
   workspace!: WorkspaceEntity | null;
 }

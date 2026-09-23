@@ -4,8 +4,10 @@ import {
   Entity,
   PrimaryColumn,
   UpdateDateColumn,
+  Unique,
 } from 'typeorm';
 
+@Unique('workspaces_slug_key', ['slug'])
 @Entity({
   name: 'workspaces',
 })

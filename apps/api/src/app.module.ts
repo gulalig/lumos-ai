@@ -6,8 +6,12 @@ import { envSchema } from './config/env.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { RedisModule } from './redis/redis.module.js';
-import { LiveKitModule } from "./livekit/livekit.module.js";
-import { MeetingsModule } from "./meetings/meetings.module.js";
+import { LiveKitModule } from './livekit/livekit.module.js';
+import { MeetingsModule } from './meetings/meetings.module.js';
+import { IdentityModule } from './identity/identity.module.js';
+import { SprintsModule } from './sprints/sprints.module.js';
+import { JiraIntegrationModule } from './integrations/jira/jira-integration.module.js';
+import { ExecutionModule } from './execution/execution.module.js';
 
 @Module({
   imports: [
@@ -28,6 +32,10 @@ import { MeetingsModule } from "./meetings/meetings.module.js";
     HealthModule,
     LiveKitModule,
     MeetingsModule,
+    IdentityModule,
+    SprintsModule,
+    JiraIntegrationModule,
+    ExecutionModule,
   ],
 })
 export class AppModule {}

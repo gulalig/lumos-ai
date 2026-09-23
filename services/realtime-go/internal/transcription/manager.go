@@ -225,10 +225,52 @@ func (m *Manager) runTrack(
 	)
 	defer sessionCancel()
 
+	primarySpeakerLabel := ""
+
 	session, err := m.assembly.OpenSession(
 		sessionCtx,
 		func(turn assemblyai.Turn) {
 			if turn.Transcript == "" {
+				return
+			}
+
+			speakerLabel := strings.TrimSpace(turn.SpeakerLabel)
+
+			if speakerLabel == "" ||
+				strings.EqualFold(speakerLabel, "PENDING") {
+
+				m.logger.Warn(
+					"transcript rejected because speaker identity is unresolved",
+					"participant", participantIdentity,
+					"trackId", trackID,
+					"turnOrder", turn.TurnOrder,
+					"speakerLabel", speakerLabel,
+				)
+
+				return
+			}
+
+			if primarySpeakerLabel == "" {
+				primarySpeakerLabel = speakerLabel
+
+				m.logger.Info(
+					"primary speaker label bound to microphone track",
+					"participant", participantIdentity,
+					"trackId", trackID,
+					"speakerLabel", primarySpeakerLabel,
+				)
+			}
+
+			if speakerLabel != primarySpeakerLabel {
+				m.logger.Warn(
+					"transcript rejected because speaker does not match microphone owner",
+					"participant", participantIdentity,
+					"trackId", trackID,
+					"turnOrder", turn.TurnOrder,
+					"speakerLabel", speakerLabel,
+					"primarySpeakerLabel", primarySpeakerLabel,
+				)
+
 				return
 			}
 
@@ -239,6 +281,7 @@ func (m *Manager) runTrack(
 					"trackId", trackID,
 					"turnOrder", turn.TurnOrder,
 					"transcript", turn.Transcript,
+					"speakerLabel", turn.SpeakerLabel,
 				)
 
 				evidenceTurn, err := evidence.NewTurn(

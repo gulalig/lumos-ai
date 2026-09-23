@@ -1,12 +1,11 @@
-export type MeetingStatus =
-  | 'created'
-  | 'active'
-  | 'ended';
+export type MeetingStatus = 'created' | 'active' | 'ended';
 
 export interface Meeting {
   id: string;
   roomName: string;
   status: MeetingStatus;
+
+  workspaceId: string | null;
 
   createdAt: Date;
   startedAt: Date | null;

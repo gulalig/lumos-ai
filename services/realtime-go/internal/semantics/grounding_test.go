@@ -173,3 +173,31 @@ func TestEmptyDueTextDoesNotRequireDeadlineEvidence(
 		)
 	}
 }
+
+func TestCommitmentWithoutOwnerPassesGrounding(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	candidate := Candidate{
+		Kind: KindCommitment,
+
+		Summary: "Prepare the launch checklist",
+
+		Explicit: true,
+
+		Confidence: 0.99,
+	}
+
+	err := ValidateGrounding(
+		candidate,
+		"We need to prepare the launch checklist.",
+	)
+
+	if err != nil {
+		t.Fatalf(
+			"expected commitment without owner to pass grounding, got %v",
+			err,
+		)
+	}
+}

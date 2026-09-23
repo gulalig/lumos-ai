@@ -27,10 +27,6 @@ var (
 		"semantic summary is required",
 	)
 
-	ErrMissingOwner = errors.New(
-		"explicit commitment requires an owner",
-	)
-
 	ErrImplicitCommitment = errors.New(
 		"implicit statement cannot become a commitment",
 	)
@@ -194,7 +190,6 @@ func normalizeEvidenceEventIDs(
 		)
 
 	for _, value := range values {
-
 		value =
 			strings.TrimSpace(
 				value,
@@ -264,10 +259,11 @@ func (o Observation) Validate() error {
 			return ErrImplicitCommitment
 		}
 
-		if o.Owner == "" {
-			return ErrMissingOwner
-		}
-
+		// Owner and due date are intentionally optional.
+		//
+		// Missing execution details are represented as
+		// intervention gaps instead of invalidating the
+		// semantic commitment.
 		return nil
 
 	default:
