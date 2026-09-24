@@ -60,10 +60,20 @@ func (c *Client) StreamingURL() (string, error) {
 
 	query := u.Query()
 	query.Set("sample_rate", "16000")
-	query.Set("speech_model", "universal-3-5-pro")
-	query.Set("mode", "min_latency")
-	query.Set("voice_focus", "near-field")
-	query.Set("speaker_labels", "true")
+  query.Set("speech_model", "universal-3-5-pro")
+  query.Set("mode", "min_latency")
+  query.Set("voice_focus", "near-field")
+  query.Set("speaker_labels", "false")
+
+  query.Set(
+  	"keyterms_prompt",
+  	`["Lumos"]`,
+  )
+
+  query.Set(
+  	"agent_context",
+  	"Lumos is an AI meeting assistant. Participants discuss commitments, owners, deadlines, decisions, and follow-up actions.",
+  )
 
 	u.RawQuery = query.Encode()
 

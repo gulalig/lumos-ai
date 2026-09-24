@@ -15,6 +15,7 @@ import { ExecutionObservationLinkEntity } from './entities/execution-observation
 
 export interface ApplyCommitmentInput {
   meetingId: string;
+  ownerDisplayName?: string | null;
   observationId: string;
   evidenceEventId: string;
   summary: string;
@@ -25,170 +26,175 @@ export interface ApplyCommitmentInput {
 
 @Injectable()
 export class ExecutionService {
-  constructor(
-    private readonly dataSource: DataSource,
-  ) {}
+  constructor(private readonly dataSource: DataSource) {}
 
   async applyCommitment(
     input: ApplyCommitmentInput,
   ): Promise<SprintItemEntity> {
-    return this.dataSource.transaction(
-      async (manager) => {
-        const links =
-          manager.getRepository(
-            ExecutionObservationLinkEntity,
-          );
+    return this.dataSource.transaction(async (manager) => {
+      const links = manager.getRepository(ExecutionObservationLinkEntity);
 
-        const existingLink =
-          await links.findOne({
-            where: {
-              observationId:
-              input.observationId,
-            },
-            relations: {
-              sprintItem: true,
-            },
-          });
+      const existingLink = await links.findOne({
+        where: {
+          observationId: input.observationId,
+        },
+        relations: {
+          sprintItem: true,
+        },
+      });
 
-        // Redis semantic delivery is at-least-once.
-        // If this observation was already applied,
-        // return the same domain item without mutating it again.
-        if (existingLink) {
-          return existingLink.sprintItem;
+      // Redis semantic delivery is at-least-once.
+      // If this observation was already applied,
+      // return the same domain item without mutating it again.
+      if (existingLink) {
+        return existingLink.sprintItem;
+      }
+
+      const meetings = manager.getRepository(MeetingEntity);
+
+      const meeting = await meetings.findOne({
+        where: {
+          id: input.meetingId,
+        },
+      });
+
+      if (!meeting) {
+        throw new NotFoundException('Meeting not found');
+      }
+
+      if (!meeting.workspaceId) {
+        throw new ConflictException('Meeting is not bound to a workspace');
+      }
+
+      let resolvedOwnerWorkspaceMemberId = input.ownerWorkspaceMemberId;
+
+      if (!resolvedOwnerWorkspaceMemberId && input.ownerDisplayName?.trim()) {
+        const members = manager.getRepository(WorkspaceMemberEntity);
+
+        const matches = await members
+          .createQueryBuilder('member')
+          .innerJoinAndSelect('member.user', 'user')
+          .where('member.workspace_id = :workspaceId', {
+            workspaceId: meeting.workspaceId,
+          })
+          .andWhere(
+            'LOWER(BTRIM(user.display_name)) = LOWER(BTRIM(:displayName))',
+            {
+              displayName: input.ownerDisplayName.trim(),
+            },
+          )
+          .take(2)
+          .getMany();
+
+        if (matches.length === 1) {
+          resolvedOwnerWorkspaceMemberId = matches[0].id;
         }
+      }
 
-        const meetings = manager.getRepository(MeetingEntity);
+      if (resolvedOwnerWorkspaceMemberId) {
+        const members = manager.getRepository(WorkspaceMemberEntity);
 
-        const meeting = await meetings.findOne({
-            where: {
-              id: input.meetingId,
-            },
-          });
+        const owner = await members.findOne({
+          where: {
+            id: resolvedOwnerWorkspaceMemberId,
+            workspaceId: meeting.workspaceId,
+          },
+        });
 
-        if (!meeting) {
-          throw new NotFoundException(
-            'Meeting not found',
-          );
-        }
-
-        if (!meeting.workspaceId) {
+        if (!owner) {
           throw new ConflictException(
-            'Meeting is not bound to a workspace',
+            'Commitment owner does not belong to the meeting workspace',
+          );
+        }
+      }
+
+      const items = manager.getRepository(SprintItemEntity);
+
+      let item: SprintItemEntity;
+
+      if (input.supersedesObservationId) {
+        const previousLink = await links.findOne({
+          where: {
+            observationId: input.supersedesObservationId,
+          },
+        });
+
+        if (!previousLink) {
+          throw new ConflictException(
+            'Superseded observation has no execution-state link',
           );
         }
 
-        if (input.ownerWorkspaceMemberId) {
-          const members = manager.getRepository(WorkspaceMemberEntity);
+        const existingItem = await items.findOne({
+          where: {
+            id: previousLink.sprintItemId,
+          },
+          lock: {
+            mode: 'pessimistic_write',
+          },
+        });
 
-          const owner = await members.findOne({
-              where: {
-                id: input.ownerWorkspaceMemberId,
-                workspaceId: meeting.workspaceId,
-              },
-            });
-
-          if (!owner) {
-            throw new ConflictException(
-              'Commitment owner does not belong to the meeting workspace',
-            );
-          }
+        if (!existingItem) {
+          throw new ConflictException('Linked sprint item no longer exists');
         }
 
-        const items = manager.getRepository(SprintItemEntity);
+        // IMPORTANT:
+        // refinement mutates the SAME execution item.
+        existingItem.title = input.summary;
 
-        let item: SprintItemEntity;
-
-        if (input.supersedesObservationId) {
-          const previousLink = await links.findOne({
-              where: {
-                observationId:
-                input.supersedesObservationId,
-              },
-            });
-
-          if (!previousLink) {
-            throw new ConflictException(
-              'Superseded observation has no execution-state link',
-            );
-          }
-
-          const existingItem =
-            await items.findOne({
-              where: {
-                id: previousLink.sprintItemId,
-              },
-              lock: {
-                mode: 'pessimistic_write',
-              },
-            });
-
-          if (!existingItem) {
-            throw new ConflictException(
-              'Linked sprint item no longer exists',
-            );
-          }
-
-          // IMPORTANT:
-          // refinement mutates the SAME execution item.
-          existingItem.title = input.summary;
-
-          if (input.ownerWorkspaceMemberId !== null) {
-            existingItem.ownerWorkspaceMemberId =
-              input.ownerWorkspaceMemberId;
-          }
-
-          if (input.dueAt !== null) {
-            existingItem.dueAt = input.dueAt;
-          }
-
-          item = await items.save(existingItem);
-        } else {
-          const sprints = manager.getRepository(SprintEntity);
-
-          const activeSprint = await sprints.findOne({
-              where: {
-                workspaceId: meeting.workspaceId,
-                status: 'active',
-              },
-              order: {
-                startsAt: 'DESC',
-                createdAt: 'DESC',
-              },
-            });
-
-          if (!activeSprint) {
-            throw new ConflictException(
-              'Workspace has no active sprint',
-            );
-          }
-
-          item = items.create({
-              id: randomUUID(),
-              sprintId: activeSprint.id,
-              title: input.summary,
-              description: null,
-              status: 'todo',
-              ownerWorkspaceMemberId: input.ownerWorkspaceMemberId,
-              dueAt: input.dueAt,
-              blockerText: null,
-              acceptanceCriteria: [],
-            });
-
-          item = await items.save(item);
+        if (resolvedOwnerWorkspaceMemberId !== null) {
+          existingItem.ownerWorkspaceMemberId = resolvedOwnerWorkspaceMemberId;
         }
 
-        const link = links.create({
-            observationId: input.observationId,
-            meetingId: input.meetingId,
-            sprintItemId: item.id,
-            kind: 'commitment',
-            evidenceEventId: input.evidenceEventId,
-          });
+        if (input.dueAt !== null) {
+          existingItem.dueAt = input.dueAt;
+        }
 
-        await links.save(link);
+        item = await items.save(existingItem);
+      } else {
+        const sprints = manager.getRepository(SprintEntity);
 
-        return item;
-      },
-    );
+        const activeSprint = await sprints.findOne({
+          where: {
+            workspaceId: meeting.workspaceId,
+            status: 'active',
+          },
+          order: {
+            startsAt: 'DESC',
+            createdAt: 'DESC',
+          },
+        });
+
+        if (!activeSprint) {
+          throw new ConflictException('Workspace has no active sprint');
+        }
+
+        item = items.create({
+          id: randomUUID(),
+          sprintId: activeSprint.id,
+          title: input.summary,
+          description: null,
+          status: 'todo',
+          ownerWorkspaceMemberId: resolvedOwnerWorkspaceMemberId,
+          dueAt: input.dueAt,
+          blockerText: null,
+          acceptanceCriteria: [],
+        });
+
+        item = await items.save(item);
+      }
+
+      const link = links.create({
+        observationId: input.observationId,
+        meetingId: input.meetingId,
+        sprintItemId: item.id,
+        kind: 'commitment',
+        evidenceEventId: input.evidenceEventId,
+      });
+
+      await links.save(link);
+
+      return item;
+    });
   }
 }

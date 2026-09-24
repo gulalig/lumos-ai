@@ -80,12 +80,17 @@ func (m *Manager) HandleTrackSubscribed(
 	publication *lksdk.RemoteTrackPublication,
 	participant *lksdk.RemoteParticipant,
 ) {
-	if publication.Source() != livekit.TrackSource_MICROPHONE {
+	if publication.Source() !=
+		livekit.TrackSource_MICROPHONE {
+
 		m.logger.Debug(
 			"ignoring non-microphone track",
-			"trackId", publication.SID(),
-			"participant", participant.Identity(),
-			"source", publication.Source().String(),
+			"trackId",
+			publication.SID(),
+			"participant",
+			participant.Identity(),
+			"source",
+			publication.Source().String(),
 		)
 
 		return
@@ -97,23 +102,33 @@ func (m *Manager) HandleTrackSubscribed(
 	) {
 		m.logger.Warn(
 			"ignoring unsupported microphone codec",
-			"trackId", publication.SID(),
-			"participant", participant.Identity(),
-			"codec", track.Codec().MimeType,
+			"trackId",
+			publication.SID(),
+			"participant",
+			participant.Identity(),
+			"codec",
+			track.Codec().MimeType,
 		)
 
 		return
 	}
 
-	trackID := publication.SID()
+	trackID :=
+		publication.SID()
 
-	trackCtx, cancel := context.WithCancel(m.ctx)
+	trackCtx,
+		cancel :=
+		context.WithCancel(
+			m.ctx,
+		)
 
-	state := &trackState{
-		cancel: cancel,
-	}
+	state :=
+		&trackState{
+			cancel: cancel,
+		}
 
-	reserved, err :=
+	reserved,
+		err :=
 		m.reserveTrack(
 			trackID,
 			state,
@@ -150,15 +165,17 @@ func (m *Manager) HandleTrackSubscribed(
 		return
 	}
 
-	m.wg.Go(func() {
-		m.runTrack(
-			trackCtx,
-			track,
-			publication,
-			participant,
-			state,
-		)
-	})
+	m.wg.Go(
+		func() {
+			m.runTrack(
+				trackCtx,
+				track,
+				publication,
+				participant,
+				state,
+			)
+		},
+	)
 }
 
 func (m *Manager) HandleTrackUnsubscribed(
@@ -168,25 +185,39 @@ func (m *Manager) HandleTrackUnsubscribed(
 ) {
 	m.logger.Info(
 		"microphone track unsubscribed",
-		"trackId", publication.SID(),
-		"participant", participant.Identity(),
+		"trackId",
+		publication.SID(),
+		"participant",
+		participant.Identity(),
 	)
 
-	m.stopTrack(publication.SID())
+	m.stopTrack(
+		publication.SID(),
+	)
 }
 
 func (m *Manager) Close() {
 	m.mu.Lock()
 
-	states := make(
-		[]*trackState,
-		0,
-		len(m.tracks),
-	)
+	states :=
+		make(
+			[]*trackState,
+			0,
+			len(m.tracks),
+		)
 
 	for trackID, state := range m.tracks {
-		states = append(states, state)
-		delete(m.tracks, trackID)
+
+		states =
+			append(
+				states,
+				state,
+			)
+
+		delete(
+			m.tracks,
+			trackID,
+		)
 	}
 
 	m.updateActiveMicrophoneTracksMetricLocked()
@@ -194,6 +225,7 @@ func (m *Manager) Close() {
 	m.mu.Unlock()
 
 	for _, state := range states {
+
 		state.cancel()
 	}
 
@@ -207,8 +239,11 @@ func (m *Manager) runTrack(
 	participant *lksdk.RemoteParticipant,
 	state *trackState,
 ) {
-	trackID := publication.SID()
-	participantIdentity := participant.Identity()
+	trackID :=
+		publication.SID()
+
+	participantIdentity :=
+		participant.Identity()
 
 	defer m.removeTrack(
 		trackID,
@@ -220,174 +255,240 @@ func (m *Manager) runTrack(
 	// AssemblyAI gets its own lifecycle so an unsubscribe does not
 	// immediately kill the transcription websocket before buffered
 	// audio and the Terminate message are flushed.
-	sessionCtx, sessionCancel := context.WithCancel(
-		context.Background(),
-	)
+	sessionCtx,
+		sessionCancel :=
+		context.WithCancel(
+			context.Background(),
+		)
+
 	defer sessionCancel()
 
-	primarySpeakerLabel := ""
+	var speechStartedMu sync.Mutex
 
-	session, err := m.assembly.OpenSession(
-		sessionCtx,
-		func(turn assemblyai.Turn) {
-			if turn.Transcript == "" {
-				return
-			}
+	speechStarted :=
+		false
 
-			speakerLabel := strings.TrimSpace(turn.SpeakerLabel)
+	session,
+		err :=
+		m.assembly.OpenSession(
+			sessionCtx,
 
-			if speakerLabel == "" ||
-				strings.EqualFold(speakerLabel, "PENDING") {
+			func(
+				turn assemblyai.Turn,
+			) {
+				transcript :=
+					strings.TrimSpace(
+						turn.Transcript,
+					)
 
-				m.logger.Warn(
-					"transcript rejected because speaker identity is unresolved",
-					"participant", participantIdentity,
-					"trackId", trackID,
-					"turnOrder", turn.TurnOrder,
-					"speakerLabel", speakerLabel,
-				)
+				if transcript == "" {
+					return
+				}
 
-				return
-			}
-
-			if primarySpeakerLabel == "" {
-				primarySpeakerLabel = speakerLabel
-
-				m.logger.Info(
-					"primary speaker label bound to microphone track",
-					"participant", participantIdentity,
-					"trackId", trackID,
-					"speakerLabel", primarySpeakerLabel,
-				)
-			}
-
-			if speakerLabel != primarySpeakerLabel {
-				m.logger.Warn(
-					"transcript rejected because speaker does not match microphone owner",
-					"participant", participantIdentity,
-					"trackId", trackID,
-					"turnOrder", turn.TurnOrder,
-					"speakerLabel", speakerLabel,
-					"primarySpeakerLabel", primarySpeakerLabel,
-				)
-
-				return
-			}
-
-			if turn.EndOfTurn {
-				m.logger.Info(
-					"transcript final",
-					"participant", participantIdentity,
-					"trackId", trackID,
-					"turnOrder", turn.TurnOrder,
-					"transcript", turn.Transcript,
-					"speakerLabel", turn.SpeakerLabel,
-				)
-
-				evidenceTurn, err := evidence.NewTurn(
-					m.meetingID,
-					participantIdentity,
-					trackID,
-					turn.TurnOrder,
-					turn.Transcript,
-					time.Now().UTC(),
-				)
-				if err != nil {
-					m.logger.Error(
-						"failed to create evidence turn",
-						"participant", participantIdentity,
-						"trackId", trackID,
-						"turnOrder", turn.TurnOrder,
-						"error", err,
+				if !turn.EndOfTurn {
+					m.logger.Debug(
+						"transcript partial",
+						"participant",
+						participantIdentity,
+						"trackId",
+						trackID,
+						"turnOrder",
+						turn.TurnOrder,
+						"transcript",
+						transcript,
 					)
 
 					return
 				}
 
-				if err := m.evidence.Enqueue(
-					sessionCtx,
-					evidenceTurn,
-				); err != nil {
-					m.logger.Error(
-						"failed to enqueue evidence turn",
-						"eventId", evidenceTurn.EventID,
-						"error", err,
+				speechStartedMu.Lock()
+
+				hasSpeechStarted :=
+					speechStarted
+
+				speechStarted =
+					false
+
+				speechStartedMu.Unlock()
+
+				if !hasSpeechStarted {
+					m.logger.Warn(
+						"final transcript rejected because AssemblyAI did not detect speech start",
+						"participant",
+						participantIdentity,
+						"trackId",
+						trackID,
+						"turnOrder",
+						turn.TurnOrder,
+						"transcript",
+						transcript,
 					)
+
+					return
 				}
 
-				return
-			}
+				m.logger.Info(
+					"transcript final",
+					"participant",
+					participantIdentity,
+					"trackId",
+					trackID,
+					"turnOrder",
+					turn.TurnOrder,
+					"transcript",
+					transcript,
+				)
 
-			m.logger.Debug(
-				"transcript partial",
-				"participant", participantIdentity,
-				"trackId", trackID,
-				"turnOrder", turn.TurnOrder,
-				"transcript", turn.Transcript,
-			)
-		},
-	)
+				evidenceTurn,
+					err :=
+					evidence.NewTurn(
+						m.meetingID,
+						participantIdentity,
+						trackID,
+						turn.TurnOrder,
+						transcript,
+						time.Now().UTC(),
+					)
+
+				if err != nil {
+					m.logger.Error(
+						"failed to create evidence turn",
+						"participant",
+						participantIdentity,
+						"trackId",
+						trackID,
+						"turnOrder",
+						turn.TurnOrder,
+						"error",
+						err,
+					)
+
+					return
+				}
+
+				if err :=
+					m.evidence.Enqueue(
+						sessionCtx,
+						evidenceTurn,
+					); err != nil {
+
+					m.logger.Error(
+						"failed to enqueue evidence turn",
+						"eventId",
+						evidenceTurn.EventID,
+						"error",
+						err,
+					)
+				}
+			},
+
+			func(
+				started assemblyai.SpeechStarted,
+			) {
+				speechStartedMu.Lock()
+
+				speechStarted =
+					true
+
+				speechStartedMu.Unlock()
+
+				m.logger.Debug(
+					"assemblyai speech started",
+					"participant",
+					participantIdentity,
+					"trackId",
+					trackID,
+					"timestamp",
+					started.Timestamp,
+					"confidence",
+					started.Confidence,
+				)
+			},
+		)
 
 	if err != nil {
 		m.logger.Error(
 			"failed to open AssemblyAI session",
-			"participant", participantIdentity,
-			"trackId", trackID,
-			"error", err,
+			"participant",
+			participantIdentity,
+			"trackId",
+			trackID,
+			"error",
+			err,
 		)
 
 		return
 	}
 
-	chunker := newPCMChunker(
-		sessionCtx,
-		session,
-	)
+	chunker :=
+		newPCMChunker(
+			sessionCtx,
+			session,
+		)
 
 	defer func() {
-		if err := chunker.Close(); err != nil {
+		if err :=
+			chunker.Close(); err != nil {
+
 			m.logger.Warn(
 				"failed to close transcription pipeline cleanly",
-				"participant", participantIdentity,
-				"trackId", trackID,
-				"error", err,
+				"participant",
+				participantIdentity,
+				"trackId",
+				trackID,
+				"error",
+				err,
 			)
 		}
 	}()
 
-	decoder, err := opus.NewDecoderWithOutput(
-		targetSampleRate,
-		targetChannels,
-	)
+	decoder,
+		err :=
+		opus.NewDecoderWithOutput(
+			targetSampleRate,
+			targetChannels,
+		)
+
 	if err != nil {
 		m.logger.Error(
 			"failed to create Opus decoder",
-			"participant", participantIdentity,
-			"trackId", trackID,
-			"error", err,
+			"participant",
+			participantIdentity,
+			"trackId",
+			trackID,
+			"error",
+			err,
 		)
 
 		return
 	}
 
-	builder := samplebuilder.New(
-		maxLateAudioPackets,
-		&codecs.OpusPacket{},
-		track.Codec().ClockRate,
-	)
+	builder :=
+		samplebuilder.New(
+			maxLateAudioPackets,
+			&codecs.OpusPacket{},
+			track.Codec().ClockRate,
+		)
 
-	decodeBuffer := make(
-		[]int16,
-		maxDecodedSamples*targetChannels,
-	)
+	decodeBuffer :=
+		make(
+			[]int16,
+			maxDecodedSamples*
+				targetChannels,
+		)
 
 	m.logger.Info(
 		"transcription pipeline started",
-		"participant", participantIdentity,
-		"trackId", trackID,
-		"codec", track.Codec().MimeType,
-		"sampleRate", targetSampleRate,
-		"channels", targetChannels,
+		"participant",
+		participantIdentity,
+		"trackId",
+		trackID,
+		"codec",
+		track.Codec().MimeType,
+		"sampleRate",
+		targetSampleRate,
+		"channels",
+		targetChannels,
 	)
 
 	for {
@@ -395,20 +496,32 @@ func (m *Manager) runTrack(
 			break
 		}
 
-		if err := track.SetReadDeadline(
-			time.Now().Add(trackReadTimeout),
-		); err != nil {
+		if err :=
+			track.SetReadDeadline(
+				time.Now().
+					Add(
+						trackReadTimeout,
+					),
+			); err != nil {
+
 			m.logger.Error(
 				"failed to set RTP read deadline",
-				"participant", participantIdentity,
-				"trackId", trackID,
-				"error", err,
+				"participant",
+				participantIdentity,
+				"trackId",
+				trackID,
+				"error",
+				err,
 			)
 
 			break
 		}
 
-		packet, _, err := track.ReadRTP()
+		packet,
+			_,
+			err :=
+			track.ReadRTP()
+
 		if err != nil {
 			if ctx.Err() != nil {
 				break
@@ -416,34 +529,48 @@ func (m *Manager) runTrack(
 
 			var netErr net.Error
 
-			if errors.As(err, &netErr) &&
+			if errors.As(
+				err,
+				&netErr,
+			) &&
 				netErr.Timeout() {
+
 				continue
 			}
 
 			m.logger.Warn(
 				"RTP read stopped",
-				"participant", participantIdentity,
-				"trackId", trackID,
-				"error", err,
+				"participant",
+				participantIdentity,
+				"trackId",
+				trackID,
+				"error",
+				err,
 			)
 
 			break
 		}
 
-		builder.Push(packet)
+		builder.Push(
+			packet,
+		)
 
-		if err := drainSamples(
-			builder,
-			&decoder,
-			decodeBuffer,
-			chunker,
-		); err != nil {
+		if err :=
+			drainSamples(
+				builder,
+				&decoder,
+				decodeBuffer,
+				chunker,
+			); err != nil {
+
 			m.logger.Error(
 				"audio pipeline failed",
-				"participant", participantIdentity,
-				"trackId", trackID,
-				"error", err,
+				"participant",
+				participantIdentity,
+				"trackId",
+				trackID,
+				"error",
+				err,
 			)
 
 			return
@@ -454,17 +581,22 @@ func (m *Manager) runTrack(
 	// track stopped.
 	builder.Flush()
 
-	if err := drainSamples(
-		builder,
-		&decoder,
-		decodeBuffer,
-		chunker,
-	); err != nil {
+	if err :=
+		drainSamples(
+			builder,
+			&decoder,
+			decodeBuffer,
+			chunker,
+		); err != nil {
+
 		m.logger.Warn(
 			"failed to flush final audio",
-			"participant", participantIdentity,
-			"trackId", trackID,
-			"error", err,
+			"participant",
+			participantIdentity,
+			"trackId",
+			trackID,
+			"error",
+			err,
 		)
 	}
 }
@@ -476,15 +608,20 @@ func drainSamples(
 	chunker *pcmChunker,
 ) error {
 	for {
-		sample := builder.Pop()
+		sample :=
+			builder.Pop()
+
 		if sample == nil {
 			return nil
 		}
 
-		sampleCount, err := decoder.DecodeToInt16(
-			sample.Data,
-			decodeBuffer,
-		)
+		sampleCount,
+			err :=
+			decoder.DecodeToInt16(
+				sample.Data,
+				decodeBuffer,
+			)
+
 		if err != nil {
 			return err
 		}
@@ -493,17 +630,25 @@ func drainSamples(
 			continue
 		}
 
-		totalSamples := sampleCount * targetChannels
+		totalSamples :=
+			sampleCount *
+				targetChannels
 
-		if totalSamples > len(decodeBuffer) {
+		if totalSamples >
+			len(
+				decodeBuffer,
+			) {
+
 			return errors.New(
 				"decoded Opus sample count exceeds buffer",
 			)
 		}
 
-		if err := chunker.Write(
-			decodeBuffer[:totalSamples],
-		); err != nil {
+		if err :=
+			chunker.Write(
+				decodeBuffer[:totalSamples],
+			); err != nil {
+
 			return err
 		}
 	}
@@ -514,7 +659,8 @@ func (m *Manager) stopTrack(
 ) {
 	m.mu.Lock()
 
-	state, exists :=
+	state,
+		exists :=
 		m.tracks[trackID]
 
 	if exists {
@@ -539,7 +685,8 @@ func (m *Manager) removeTrack(
 ) {
 	m.mu.Lock()
 
-	current, exists :=
+	current,
+		exists :=
 		m.tracks[trackID]
 
 	if exists &&

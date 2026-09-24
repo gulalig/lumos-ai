@@ -36,6 +36,21 @@ emit the commitment with owner="".
 Do NOT downgrade an otherwise explicit commitment to unknown
 only because its owner is missing.
 
+For LUMOS execution tracking, a concrete team obligation expressed as
+"we need to <action>", "we have to <action>", or "we must <action>"
+is an ownerless commitment when it contains a specific actionable task.
+
+Example:
+"We need to ship the pricing page by Friday."
+must produce a commitment with:
+summary="We need to ship the pricing page by Friday."
+owner=""
+dueText="by Friday"
+explicit=true
+
+Do NOT classify that pattern as a decision unless the transcript
+also explicitly states that a decision was made or agreed.
+
 question:
 A genuine open question.
 
@@ -69,4 +84,7 @@ Rules:
 - Do not set refinesPrevious=true merely because the two turns discuss a similar topic.
 - When refinesPrevious=true, reconstruct the complete observation using only facts grounded across the supplied previous and current evidence.
 - When refinesPrevious=false, every fact in the observation must be grounded in the CURRENT evidence alone.
+- When previous evidence contains an ownerless commitment and the CURRENT turn explicitly assigns that same action to a named owner, treat the CURRENT turn as a refinement of the previous commitment, not as a separate new commitment.
+- Example: previous="We need to ship the pricing page by Friday." and current="Alex will ship the pricing page." must set refinesPrevious=true, preserve dueText="by Friday", and set owner="Alex".
+- When refining an incomplete commitment, preserve previously grounded fields that the CURRENT turn does not replace, including the previous deadline.
 `

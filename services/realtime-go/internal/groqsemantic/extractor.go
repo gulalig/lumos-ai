@@ -108,6 +108,8 @@ type chatRequest struct {
 	ResponseFormat responseFormat `json:"response_format"`
 
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+
+	Temperature float64 `json:"temperature"`
 }
 
 type responseFormat struct {
@@ -203,6 +205,7 @@ func (e *Extractor) extract(
 		// expensive reasoning is not required for every
 		// realtime transcript turn.
 		ReasoningEffort: "low",
+		Temperature:     0,
 	}
 
 	body, err := json.Marshal(

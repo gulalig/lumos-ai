@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"lumos/realtime-go/internal/evidence"
@@ -103,32 +104,27 @@ func (a *Actor) PrepareEvidence(
 			turn,
 		)
 
-	// Normal semantic context deliberately requires the same
-	// participant and track.
+	// Normal semantic context deliberately remains narrow.
 	//
-	// There is one narrow exception:
-	//
-	// an immediately preceding ownerless commitment may be
-	// completed when another participant explicitly accepts
-	// ownership, for example:
-	//
-	//   participant A:
-	//     "Prepare the deployment checklist."
-	//
-	//   participant B:
-	//     "I'll own it."
-	//
-	// We only expose previous evidence through this path when
-	// exactly one previous commitment is unresolved because of
-	// a missing owner.
-	if !input.HasPrevious() &&
-		a.hasSingleOwnerlessCommitment() {
+	// If normal adjacency is no longer available because Lumos
+	// spoke between the two participant turns, we selectively
+	// reopen context only for the exact unresolved field.
+	if !input.HasPrevious() {
+		switch {
+		case a.hasSingleOwnerlessCommitment():
+			input =
+				semantics.NewOwnershipRefinementContext(
+					a.previousTurn,
+					turn,
+				)
 
-		input =
-			semantics.NewOwnershipRefinementContext(
-				a.previousTurn,
-				turn,
-			)
+		case a.hasSingleCommitmentMissingDueDate():
+			input =
+				semantics.NewDueDateRefinementContext(
+					a.previousTurn,
+					turn,
+				)
+		}
 	}
 
 	extractionStarted :=
@@ -286,4 +282,33 @@ func (a *Actor) commitPrepared(
 			[]semantics.Observation(nil),
 			prepared.Observations...,
 		)
+}
+
+func (a *Actor) hasSingleCommitmentMissingDueDate() bool {
+	if len(
+		a.previousObservations,
+	) != 1 {
+
+		return false
+	}
+
+	previous :=
+		a.previousObservations[0]
+
+	if previous.Kind !=
+		semantics.KindCommitment {
+
+		return false
+	}
+
+	if strings.TrimSpace(
+		previous.Owner,
+	) == "" {
+
+		return false
+	}
+
+	return strings.TrimSpace(
+		previous.DueText,
+	) == ""
 }

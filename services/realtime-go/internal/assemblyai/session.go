@@ -22,6 +22,11 @@ type Turn struct {
 	SpeakerLabel string `json:"speaker_label"`
 }
 
+type SpeechStarted struct {
+	Timestamp  int64   `json:"timestamp"`
+	Confidence float64 `json:"confidence"`
+}
+
 type serverEvent struct {
 	Type string `json:"type"`
 	ID   string `json:"id"`
@@ -30,9 +35,13 @@ type serverEvent struct {
 	EndOfTurn    bool   `json:"end_of_turn"`
 	Transcript   string `json:"transcript"`
 	SpeakerLabel string `json:"speaker_label"`
+
+	Timestamp  int64   `json:"timestamp"`
+	Confidence float64 `json:"confidence"`
 }
 
 type TurnHandler func(Turn)
+type SpeechStartedHandler func(SpeechStarted)
 
 type Session struct {
 	conn   *websocket.Conn
@@ -47,12 +56,14 @@ type Session struct {
 	errMu sync.RWMutex
 	err   error
 
-	onTurn TurnHandler
+	onTurn          TurnHandler
+	onSpeechStarted SpeechStartedHandler
 }
 
 func (c *Client) OpenSession(
 	ctx context.Context,
 	onTurn TurnHandler,
+	onSpeechStarted SpeechStartedHandler,
 ) (*Session, error) {
 	streamingURL, err := c.StreamingURL()
 	if err != nil {
@@ -94,11 +105,12 @@ func (c *Client) OpenSession(
 	conn.SetReadLimit(readLimitBytes)
 
 	session := &Session{
-		conn:   conn,
-		cancel: cancel,
-		begun:  make(chan struct{}),
-		done:   make(chan struct{}),
-		onTurn: onTurn,
+		conn:            conn,
+		cancel:          cancel,
+		begun:           make(chan struct{}),
+		done:            make(chan struct{}),
+		onTurn:          onTurn,
+		onSpeechStarted: onSpeechStarted,
 	}
 
 	go session.readLoop(sessionCtx)
@@ -251,6 +263,18 @@ func (s *Session) readLoop(ctx context.Context) {
 			s.beginOnce.Do(func() {
 				close(s.begun)
 			})
+
+		case "SpeechStarted":
+			if s.onSpeechStarted == nil {
+				continue
+			}
+
+			s.onSpeechStarted(
+				SpeechStarted{
+					Timestamp:  event.Timestamp,
+					Confidence: event.Confidence,
+				},
+			)
 
 		case "Turn":
 			if s.onTurn == nil {

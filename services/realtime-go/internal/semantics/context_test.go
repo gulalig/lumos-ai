@@ -836,3 +836,83 @@ func TestEvidenceContextCopiesPreviousTurn(
 		)
 	}
 }
+
+func TestOwnershipRefinementContextAllowsSameParticipantNamedAssignment(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+
+	previous := evidence.Turn{
+		EventID:       "event-ownerless",
+		MeetingID:     "meeting-1",
+		ParticipantID: "participant-1",
+		TrackID:       "track-1",
+		Text:          "We need to ship the pricing page by Friday.",
+		CapturedAt:    now,
+	}
+
+	current := evidence.Turn{
+		EventID:       "event-owner",
+		MeetingID:     "meeting-1",
+		ParticipantID: "participant-1",
+		TrackID:       "track-1",
+		Text:          "Alex will ship the pricing page.",
+		CapturedAt: now.Add(
+			20 * time.Second,
+		),
+	}
+
+	input :=
+		NewOwnershipRefinementContext(
+			&previous,
+			current,
+		)
+
+	if !input.HasPrevious() {
+		t.Fatal(
+			"expected same-participant named ownership assignment to receive previous context",
+		)
+	}
+}
+
+func TestOwnershipRefinementContextRejectsSameParticipantUnrelatedStatement(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+
+	previous := evidence.Turn{
+		EventID:       "event-ownerless",
+		MeetingID:     "meeting-1",
+		ParticipantID: "participant-1",
+		TrackID:       "track-1",
+		Text:          "We need to ship the pricing page by Friday.",
+		CapturedAt:    now,
+	}
+
+	current := evidence.Turn{
+		EventID:       "event-unrelated",
+		MeetingID:     "meeting-1",
+		ParticipantID: "participant-1",
+		TrackID:       "track-1",
+		Text:          "The staging environment is slow today.",
+		CapturedAt: now.Add(
+			20 * time.Second,
+		),
+	}
+
+	input :=
+		NewOwnershipRefinementContext(
+			&previous,
+			current,
+		)
+
+	if input.HasPrevious() {
+		t.Fatal(
+			"unrelated same-participant speech must not receive ownership refinement context",
+		)
+	}
+}

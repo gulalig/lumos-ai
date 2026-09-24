@@ -4,10 +4,7 @@ import { interventionGapId } from './intervention-gap.js';
 
 import type { SemanticObservation } from '../semantics/semantic-observation.js';
 
-import type {
-  Intervention,
-  InterventionReason,
-} from './intervention.js';
+import type { Intervention, InterventionReason } from './intervention.js';
 
 type EvaluateInput = {
   meetingId: string;
@@ -20,9 +17,7 @@ type EvaluateInput = {
 
 @Injectable()
 export class InterventionService {
-  evaluate(
-    input: EvaluateInput,
-  ): Intervention[] {
+  evaluate(input: EvaluateInput): Intervention[] {
     const {
       meetingId,
       sprintItemId,
@@ -43,7 +38,7 @@ export class InterventionService {
           sprintItemId,
           observationId: observation.id,
           reason: 'missing_owner',
-          message: 'Who owns this commitment?',
+          message: "Got it — who's taking this one?",
           createdAt,
         }),
       ];
@@ -56,7 +51,7 @@ export class InterventionService {
           sprintItemId,
           observationId: observation.id,
           reason: 'missing_due_date',
-          message: 'When is this commitment due?',
+          message: 'Got it. When do we need this done?',
           createdAt,
         }),
       ];
@@ -65,26 +60,18 @@ export class InterventionService {
     return [];
   }
 
-  private createIntervention(
-    input: {
-      meetingId: string;
-      sprintItemId: string;
-      observationId: string;
-      reason: InterventionReason;
-      message: string;
-      createdAt: Date;
-    },
-  ): Intervention {
-    const gapId = interventionGapId(
-      input.sprintItemId,
-      input.reason,
-    );
+  private createIntervention(input: {
+    meetingId: string;
+    sprintItemId: string;
+    observationId: string;
+    reason: InterventionReason;
+    message: string;
+    createdAt: Date;
+  }): Intervention {
+    const gapId = interventionGapId(input.sprintItemId, input.reason);
 
     return {
-      id: this.requestId(
-        input.observationId,
-        gapId,
-      ),
+      id: this.requestId(input.observationId, gapId),
       gapId,
       meetingId: input.meetingId,
       sprintItemId: input.sprintItemId,
@@ -95,18 +82,9 @@ export class InterventionService {
     };
   }
 
-  private requestId(
-    observationId: string,
-    gapId: string,
-  ): string {
-    return createHash(
-      'sha256',
-    )
-      .update(
-        `${observationId}:${gapId}`,
-      )
-      .digest(
-        'hex',
-      );
+  private requestId(observationId: string, gapId: string): string {
+    return createHash('sha256')
+      .update(`${observationId}:${gapId}`)
+      .digest('hex');
   }
 }

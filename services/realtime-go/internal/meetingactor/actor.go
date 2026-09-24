@@ -81,13 +81,15 @@ func (a *Actor) buildObservation(
 	bool,
 	error,
 ) {
-	if candidate.RefinesPrevious {
-		candidate = semantics.ResolveSpeakerOwner(
-			candidate,
-			input.GroundingText(),
-			input.Current.ParticipantID,
-		)
+	// Unknown is an extractor classification, not a durable
+	// meeting outcome. Never publish it to the semantic stream.
+	if candidate.Kind == semantics.KindUnknown {
+		return semantics.Observation{},
+			false,
+			nil
+	}
 
+	if candidate.RefinesPrevious {
 		if !input.HasPrevious() {
 			return semantics.Observation{},
 				false,
@@ -95,6 +97,40 @@ func (a *Actor) buildObservation(
 					"candidate claims previous refinement without adjacent evidence",
 				)
 		}
+
+		// Refinements behave like patches.
+		//
+		// If the current answer only supplies the missing field,
+		// preserve already-grounded fields from the previous
+		// commitment.
+		//
+		// Example:
+		//
+		// previous:
+		//   owner = "Lumos developer"
+		//   due   = ""
+		//
+		// current:
+		//   "On Friday."
+		//
+		// model candidate:
+		//   owner = ""
+		//   due   = "Friday"
+		//
+		// result:
+		//   owner = "Lumos developer"
+		//   due   = "Friday"
+		candidate =
+			a.preserveCommitmentRefinementFields(
+				candidate,
+			)
+
+		candidate =
+			semantics.ResolveSpeakerOwner(
+				candidate,
+				input.GroundingText(),
+				input.Current.ParticipantID,
+			)
 
 		supersedesID :=
 			a.findSupersededObservation(
@@ -147,11 +183,12 @@ func (a *Actor) buildObservation(
 	// A normal candidate must be grounded solely in
 	// the current turn. Previous context cannot lend
 	// facts to a brand-new observation.
-	candidate = semantics.ResolveSpeakerOwner(
-		candidate,
-		input.Current.Text,
-		input.Current.ParticipantID,
-	)
+	candidate =
+		semantics.ResolveSpeakerOwner(
+			candidate,
+			input.Current.Text,
+			input.Current.ParticipantID,
+		)
 
 	if err :=
 		semantics.ValidateGroundingForSpeaker(
@@ -179,6 +216,70 @@ func (a *Actor) buildObservation(
 	return observation,
 		true,
 		nil
+}
+
+func (a *Actor) preserveCommitmentRefinementFields(
+	candidate semantics.Candidate,
+) semantics.Candidate {
+	if !candidate.RefinesPrevious ||
+		candidate.Kind !=
+			semantics.KindCommitment {
+
+		return candidate
+	}
+
+	var previous *semantics.Observation
+
+	for index := range a.previousObservations {
+
+		observation :=
+			&a.previousObservations[index]
+
+		if observation.Kind !=
+			semantics.KindCommitment {
+
+			continue
+		}
+
+		// We only preserve fields when exactly one previous
+		// commitment can be selected deterministically.
+		if previous != nil {
+			return candidate
+		}
+
+		previous =
+			observation
+	}
+
+	if previous == nil {
+		return candidate
+	}
+
+	if strings.TrimSpace(
+		candidate.Summary,
+	) == "" {
+
+		candidate.Summary =
+			previous.Summary
+	}
+
+	if strings.TrimSpace(
+		candidate.Owner,
+	) == "" {
+
+		candidate.Owner =
+			previous.Owner
+	}
+
+	if strings.TrimSpace(
+		candidate.DueText,
+	) == "" {
+
+		candidate.DueText =
+			previous.DueText
+	}
+
+	return candidate
 }
 
 func (a *Actor) hasSingleOwnerlessCommitment() bool {
@@ -217,6 +318,7 @@ func (a *Actor) findSupersededObservation(
 
 		if previous.Kind !=
 			candidate.Kind {
+
 			continue
 		}
 
@@ -241,11 +343,14 @@ func (a *Actor) findSupersededObservation(
 
 			// Missing ownership may be completed later.
 			//
-			// "" -> Alex   ✅
-			// Alex -> Alex ✅
-			// Alex -> Sam  ❌
+			// Existing ownership may only change when the
+			// difference looks like a narrow STT correction.
 			if previousOwner != "" &&
 				!strings.EqualFold(
+					previousOwner,
+					candidateOwner,
+				) &&
+				!likelyOwnerTranscriptionCorrection(
 					previousOwner,
 					candidateOwner,
 				) {
@@ -279,21 +384,155 @@ func (a *Actor) findSupersededObservation(
 	return matches[0].ID
 }
 
+func likelyOwnerTranscriptionCorrection(
+	previous string,
+	current string,
+) bool {
+	previous =
+		strings.ToLower(
+			strings.Join(
+				strings.Fields(
+					previous,
+				),
+				" ",
+			),
+		)
+
+	current =
+		strings.ToLower(
+			strings.Join(
+				strings.Fields(
+					current,
+				),
+				" ",
+			),
+		)
+
+	if previous == "" ||
+		current == "" {
+
+		return false
+	}
+
+	if previous == current {
+		return true
+	}
+
+	previousRunes :=
+		[]rune(
+			previous,
+		)
+
+	currentRunes :=
+		[]rune(
+			current,
+		)
+
+	// Avoid fuzzy-merging short names such as
+	// "Alex" and "Alec".
+	if len(previousRunes) < 8 ||
+		len(currentRunes) < 8 {
+
+		return false
+	}
+
+	lengthDifference :=
+		len(previousRunes) -
+			len(currentRunes)
+
+	if lengthDifference < 0 {
+		lengthDifference =
+			-lengthDifference
+	}
+
+	if lengthDifference > 1 {
+		return false
+	}
+
+	return editDistanceAtMostOne(
+		previousRunes,
+		currentRunes,
+	)
+}
+
+func editDistanceAtMostOne(
+	left []rune,
+	right []rune,
+) bool {
+	if len(left) == len(right) {
+		differences := 0
+
+		for index := range left {
+
+			if left[index] ==
+				right[index] {
+
+				continue
+			}
+
+			differences++
+
+			if differences > 1 {
+				return false
+			}
+		}
+
+		return differences <= 1
+	}
+
+	if len(left) >
+		len(right) {
+
+		left,
+			right =
+			right,
+			left
+	}
+
+	leftIndex := 0
+	rightIndex := 0
+	differences := 0
+
+	for leftIndex < len(left) &&
+		rightIndex < len(right) {
+
+		if left[leftIndex] ==
+			right[rightIndex] {
+
+			leftIndex++
+			rightIndex++
+
+			continue
+		}
+
+		differences++
+
+		if differences > 1 {
+			return false
+		}
+
+		rightIndex++
+	}
+
+	return true
+}
+
 func (a *Actor) ContextCheckpoint(
 	evidenceStreamID string,
 ) ContextCheckpoint {
-	checkpoint := ContextCheckpoint{
-		SchemaVersion: ContextCheckpointSchemaVersion,
+	checkpoint :=
+		ContextCheckpoint{
+			SchemaVersion: ContextCheckpointSchemaVersion,
 
-		MeetingID: a.meetingID,
+			MeetingID: a.meetingID,
 
-		EvidenceStreamID: evidenceStreamID,
+			EvidenceStreamID: evidenceStreamID,
 
-		Observations: append(
-			[]semantics.Observation(nil),
-			a.previousObservations...,
-		),
-	}
+			Observations: append(
+				[]semantics.Observation(nil),
+				a.previousObservations...,
+			),
+		}
 
 	if a.previousTurn != nil {
 		checkpoint.Turn =
@@ -306,7 +545,9 @@ func (a *Actor) ContextCheckpoint(
 func (a *Actor) RestoreContext(
 	checkpoint ContextCheckpoint,
 ) error {
-	if err := checkpoint.Validate(); err != nil {
+	if err :=
+		checkpoint.Validate(); err != nil {
+
 		return err
 	}
 

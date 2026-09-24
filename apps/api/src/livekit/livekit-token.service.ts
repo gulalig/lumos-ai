@@ -79,7 +79,7 @@ export class LiveKitTokenService {
 
       canPublish: true,
 
-      canSubscribe: false,
+      canSubscribe: true,
 
       canPublishData: false,
     });

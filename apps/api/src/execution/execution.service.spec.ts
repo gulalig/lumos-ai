@@ -1,13 +1,5 @@
-import type {
-  DataSource,
-  EntityManager,
-} from 'typeorm';
-import {
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import type { DataSource, EntityManager } from 'typeorm';
+import { describe, expect, it, vi } from 'vitest';
 
 import { WorkspaceMemberEntity } from '../identity/entities/workspace-member.entity.js';
 import { MeetingEntity } from '../meetings/meeting.entity.js';
@@ -17,453 +9,652 @@ import { SprintEntity } from '../sprints/entities/sprint.entity.js';
 import { ExecutionObservationLinkEntity } from './entities/execution-observation-link.entity.js';
 import { ExecutionService } from './execution.service.js';
 
-function createDataSource(
-  manager: EntityManager,
-): DataSource {
+function createDataSource(manager: EntityManager): DataSource {
   return {
     transaction: vi
       .fn()
       .mockImplementation(
-        async (
-          work: (
-            transactionManager: EntityManager,
-          ) => Promise<unknown>,
-        ) => work(manager),
+        async (work: (transactionManager: EntityManager) => Promise<unknown>) =>
+          work(manager),
       ),
   } as unknown as DataSource;
 }
 
 describe('ExecutionService', () => {
   it('returns the existing sprint item when the same observation is delivered again', async () => {
-    const item =
-      new SprintItemEntity();
+    const item = new SprintItemEntity();
 
-    item.id =
-      '11111111-1111-4111-8111-111111111111';
+    item.id = '11111111-1111-4111-8111-111111111111';
 
-    item.sprintId =
-      '22222222-2222-4222-8222-222222222222';
+    item.sprintId = '22222222-2222-4222-8222-222222222222';
 
-    item.title =
-      'Deliver API';
+    item.title = 'Deliver API';
 
-    item.description =
-      null;
+    item.description = null;
 
-    item.status =
-      'todo';
+    item.status = 'todo';
 
-    item.ownerWorkspaceMemberId =
-      '33333333-3333-4333-8333-333333333333';
+    item.ownerWorkspaceMemberId = '33333333-3333-4333-8333-333333333333';
 
-    item.dueAt =
-      new Date(
-        '2026-09-25T12:00:00.000Z',
-      );
+    item.dueAt = new Date('2026-09-25T12:00:00.000Z');
 
-    item.blockerText =
-      null;
+    item.blockerText = null;
 
-    item.acceptanceCriteria =
-      [];
+    item.acceptanceCriteria = [];
 
-    item.createdAt =
-      new Date();
+    item.createdAt = new Date();
 
-    item.updatedAt =
-      new Date();
+    item.updatedAt = new Date();
 
-    const existingLink =
-      new ExecutionObservationLinkEntity();
+    const existingLink = new ExecutionObservationLinkEntity();
 
-    existingLink.observationId =
-      'observation-a';
+    existingLink.observationId = 'observation-a';
 
-    existingLink.meetingId =
-      '44444444-4444-4444-8444-444444444444';
+    existingLink.meetingId = '44444444-4444-4444-8444-444444444444';
 
-    existingLink.sprintItemId =
-      item.id;
+    existingLink.sprintItemId = item.id;
 
-    existingLink.kind =
-      'commitment';
+    existingLink.kind = 'commitment';
 
-    existingLink.evidenceEventId =
-      'evidence-a';
+    existingLink.evidenceEventId = 'evidence-a';
 
-    existingLink.sprintItem =
-      item;
+    existingLink.sprintItem = item;
 
     const linksRepository = {
-      findOne:
-        vi.fn()
-          .mockResolvedValue(
-            existingLink,
-          ),
+      findOne: vi.fn().mockResolvedValue(existingLink),
 
-      create:
-        vi.fn(),
+      create: vi.fn(),
 
-      save:
-        vi.fn(),
+      save: vi.fn(),
     };
 
     const manager = {
-      getRepository:
-        vi.fn()
-          .mockImplementation(
-            (entity: unknown) => {
-              if (
-                entity ===
-                ExecutionObservationLinkEntity
-              ) {
-                return linksRepository;
-              }
+      getRepository: vi.fn().mockImplementation((entity: unknown) => {
+        if (entity === ExecutionObservationLinkEntity) {
+          return linksRepository;
+        }
 
-              throw new Error(
-                'Unexpected repository access',
-              );
-            },
-          ),
+        throw new Error('Unexpected repository access');
+      }),
     } as unknown as EntityManager;
 
-    const service =
-      new ExecutionService(
-        createDataSource(
-          manager,
-        ),
-      );
+    const service = new ExecutionService(createDataSource(manager));
 
-    const result =
-      await service.applyCommitment({
-        meetingId:
-        existingLink.meetingId,
+    const result = await service.applyCommitment({
+      meetingId: existingLink.meetingId,
 
-        observationId:
-        existingLink.observationId,
+      observationId: existingLink.observationId,
 
-        evidenceEventId:
-        existingLink.evidenceEventId,
+      evidenceEventId: existingLink.evidenceEventId,
 
-        summary:
-          'Deliver API',
+      summary: 'Deliver API',
 
-        ownerWorkspaceMemberId:
-          item.ownerWorkspaceMemberId!,
+      ownerWorkspaceMemberId: item.ownerWorkspaceMemberId!,
 
-        dueAt:
-        item.dueAt,
-      });
+      dueAt: item.dueAt,
+    });
 
-    expect(result.id)
-      .toBe(item.id);
+    expect(result.id).toBe(item.id);
 
-    expect(
-      linksRepository.create,
-    ).not.toHaveBeenCalled();
+    expect(linksRepository.create).not.toHaveBeenCalled();
 
-    expect(
-      linksRepository.save,
-    ).not.toHaveBeenCalled();
+    expect(linksRepository.save).not.toHaveBeenCalled();
 
-    expect(
-      manager.getRepository,
-    ).toHaveBeenCalledTimes(1);
+    expect(manager.getRepository).toHaveBeenCalledTimes(1);
   });
 
   it('mutates the same sprint item when a commitment supersedes a previous observation', async () => {
-    const meeting =
-      new MeetingEntity();
+    const meeting = new MeetingEntity();
 
-    meeting.id =
-      '44444444-4444-4444-8444-444444444444';
+    meeting.id = '44444444-4444-4444-8444-444444444444';
 
-    meeting.workspaceId =
-      '55555555-5555-4555-8555-555555555555';
+    meeting.workspaceId = '55555555-5555-4555-8555-555555555555';
 
-    const owner =
-      new WorkspaceMemberEntity();
+    const owner = new WorkspaceMemberEntity();
 
-    owner.id =
-      '33333333-3333-4333-8333-333333333333';
+    owner.id = '33333333-3333-4333-8333-333333333333';
 
-    owner.workspaceId =
-      meeting.workspaceId;
+    owner.workspaceId = meeting.workspaceId;
 
-    const item =
-      new SprintItemEntity();
+    const item = new SprintItemEntity();
 
-    item.id =
-      '11111111-1111-4111-8111-111111111111';
+    item.id = '11111111-1111-4111-8111-111111111111';
 
-    item.sprintId =
-      '22222222-2222-4222-8222-222222222222';
+    item.sprintId = '22222222-2222-4222-8222-222222222222';
 
-    item.title =
-      'Deliver API';
+    item.title = 'Deliver API';
 
-    item.description =
-      null;
+    item.description = null;
 
-    item.status =
-      'todo';
+    item.status = 'todo';
 
-    item.ownerWorkspaceMemberId =
-      owner.id;
+    item.ownerWorkspaceMemberId = owner.id;
 
-    item.dueAt =
-      new Date(
-        '2026-09-25T12:00:00.000Z',
-      );
+    item.dueAt = new Date('2026-09-25T12:00:00.000Z');
 
-    item.blockerText =
-      null;
+    item.blockerText = null;
 
-    item.acceptanceCriteria =
-      [];
+    item.acceptanceCriteria = [];
 
-    item.createdAt =
-      new Date();
+    item.createdAt = new Date();
 
-    item.updatedAt =
-      new Date();
+    item.updatedAt = new Date();
 
-    const previousLink =
-      new ExecutionObservationLinkEntity();
+    const previousLink = new ExecutionObservationLinkEntity();
 
-    previousLink.observationId =
-      'observation-a';
+    previousLink.observationId = 'observation-a';
 
-    previousLink.meetingId =
-      meeting.id;
+    previousLink.meetingId = meeting.id;
 
-    previousLink.sprintItemId =
-      item.id;
+    previousLink.sprintItemId = item.id;
 
-    previousLink.kind =
-      'commitment';
+    previousLink.kind = 'commitment';
 
-    previousLink.evidenceEventId =
-      'evidence-a';
+    previousLink.evidenceEventId = 'evidence-a';
 
     const linksRepository = {
-      findOne:
-        vi.fn()
-          .mockImplementation(
-            async (
-              options: {
-                where?: {
-                  observationId?: string;
-                };
-              },
-            ) => {
-              const observationId =
-                options.where
-                  ?.observationId;
+      findOne: vi.fn().mockImplementation(
+        async (options: {
+          where?: {
+            observationId?: string;
+          };
+        }) => {
+          const observationId = options.where?.observationId;
 
-              if (
-                observationId ===
-                'observation-b'
-              ) {
-                return null;
-              }
+          if (observationId === 'observation-b') {
+            return null;
+          }
 
-              if (
-                observationId ===
-                'observation-a'
-              ) {
-                return previousLink;
-              }
+          if (observationId === 'observation-a') {
+            return previousLink;
+          }
 
-              return null;
-            },
-          ),
+          return null;
+        },
+      ),
 
-      create:
-        vi.fn()
-          .mockImplementation(
-            (
-              values: Partial<ExecutionObservationLinkEntity>,
-            ) =>
-              Object.assign(
-                new ExecutionObservationLinkEntity(),
-                values,
-              ),
-          ),
+      create: vi
+        .fn()
+        .mockImplementation((values: Partial<ExecutionObservationLinkEntity>) =>
+          Object.assign(new ExecutionObservationLinkEntity(), values),
+        ),
 
-      save:
-        vi.fn()
-          .mockImplementation(
-            async (
-              link: ExecutionObservationLinkEntity,
-            ) => link,
-          ),
+      save: vi
+        .fn()
+        .mockImplementation(
+          async (link: ExecutionObservationLinkEntity) => link,
+        ),
     };
 
     const meetingsRepository = {
-      findOne:
-        vi.fn()
-          .mockResolvedValue(
-            meeting,
-          ),
+      findOne: vi.fn().mockResolvedValue(meeting),
     };
 
     const membersRepository = {
-      findOne:
-        vi.fn()
-          .mockResolvedValue(
-            owner,
-          ),
+      findOne: vi.fn().mockResolvedValue(owner),
     };
 
     const itemsRepository = {
-      findOne:
-        vi.fn()
-          .mockResolvedValue(
-            item,
-          ),
+      findOne: vi.fn().mockResolvedValue(item),
 
-      save:
-        vi.fn()
-          .mockImplementation(
-            async (
-              savedItem: SprintItemEntity,
-            ) => savedItem,
-          ),
+      save: vi
+        .fn()
+        .mockImplementation(async (savedItem: SprintItemEntity) => savedItem),
     };
 
     const sprintsRepository = {
-      findOne:
-        vi.fn(),
+      findOne: vi.fn(),
     };
 
     const manager = {
-      getRepository:
-        vi.fn()
-          .mockImplementation(
-            (entity: unknown) => {
-              if (
-                entity ===
-                ExecutionObservationLinkEntity
-              ) {
-                return linksRepository;
-              }
+      getRepository: vi.fn().mockImplementation((entity: unknown) => {
+        if (entity === ExecutionObservationLinkEntity) {
+          return linksRepository;
+        }
 
-              if (
-                entity ===
-                MeetingEntity
-              ) {
-                return meetingsRepository;
-              }
+        if (entity === MeetingEntity) {
+          return meetingsRepository;
+        }
 
-              if (
-                entity ===
-                WorkspaceMemberEntity
-              ) {
-                return membersRepository;
-              }
+        if (entity === WorkspaceMemberEntity) {
+          return membersRepository;
+        }
 
-              if (
-                entity ===
-                SprintItemEntity
-              ) {
-                return itemsRepository;
-              }
+        if (entity === SprintItemEntity) {
+          return itemsRepository;
+        }
 
-              if (
-                entity ===
-                SprintEntity
-              ) {
-                return sprintsRepository;
-              }
+        if (entity === SprintEntity) {
+          return sprintsRepository;
+        }
 
-              throw new Error(
-                'Unexpected repository access',
-              );
-            },
-          ),
+        throw new Error('Unexpected repository access');
+      }),
     } as unknown as EntityManager;
 
-    const service =
-      new ExecutionService(
-        createDataSource(
-          manager,
-        ),
-      );
+    const service = new ExecutionService(createDataSource(manager));
 
-    const newDueAt =
-      new Date(
-        '2026-09-24T12:00:00.000Z',
-      );
+    const newDueAt = new Date('2026-09-24T12:00:00.000Z');
 
-    const result =
-      await service.applyCommitment({
-        meetingId:
-        meeting.id,
+    const result = await service.applyCommitment({
+      meetingId: meeting.id,
 
-        observationId:
-          'observation-b',
+      observationId: 'observation-b',
 
-        evidenceEventId:
-          'evidence-b',
+      evidenceEventId: 'evidence-b',
 
-        summary:
-          'Deliver API revised',
+      summary: 'Deliver API revised',
 
-        ownerWorkspaceMemberId:
-        owner.id,
+      ownerWorkspaceMemberId: owner.id,
 
-        dueAt:
-        newDueAt,
+      dueAt: newDueAt,
 
-        supersedesObservationId:
-        previousLink.observationId,
-      });
+      supersedesObservationId: previousLink.observationId,
+    });
 
-    expect(result.id)
-      .toBe(item.id);
+    expect(result.id).toBe(item.id);
 
-    expect(result.title)
-      .toBe(
-        'Deliver API revised',
-      );
+    expect(result.title).toBe('Deliver API revised');
 
-    expect(result.dueAt)
-      .toEqual(
-        newDueAt,
-      );
+    expect(result.dueAt).toEqual(newDueAt);
 
-    expect(
-      result.ownerWorkspaceMemberId,
-    ).toBe(owner.id);
+    expect(result.ownerWorkspaceMemberId).toBe(owner.id);
 
-    expect(
-      itemsRepository.save,
-    ).toHaveBeenCalledTimes(1);
+    expect(itemsRepository.save).toHaveBeenCalledTimes(1);
 
-    expect(
-      linksRepository.save,
-    ).toHaveBeenCalledTimes(1);
+    expect(linksRepository.save).toHaveBeenCalledTimes(1);
 
-    expect(
-      linksRepository.save,
-    ).toHaveBeenCalledWith(
+    expect(linksRepository.save).toHaveBeenCalledWith(
       expect.objectContaining({
-        observationId:
-          'observation-b',
+        observationId: 'observation-b',
 
-        sprintItemId:
-        item.id,
+        sprintItemId: item.id,
 
-        meetingId:
-        meeting.id,
+        meetingId: meeting.id,
       }),
     );
 
     // Refinement must not search for or create
     // another active-sprint item.
-    expect(
-      sprintsRepository.findOne,
-    ).not.toHaveBeenCalled();
+    expect(sprintsRepository.findOne).not.toHaveBeenCalled();
+  });
+
+  it('resolves a unique owner display name inside the meeting workspace', async () => {
+    const meeting = new MeetingEntity();
+
+    meeting.id = '44444444-4444-4444-8444-444444444444';
+
+    meeting.workspaceId = '55555555-5555-4555-8555-555555555555';
+
+    const owner = new WorkspaceMemberEntity();
+
+    owner.id = '33333333-3333-4333-8333-333333333333';
+
+    owner.workspaceId = meeting.workspaceId;
+
+    const item = new SprintItemEntity();
+
+    item.id = '11111111-1111-4111-8111-111111111111';
+
+    item.sprintId = '22222222-2222-4222-8222-222222222222';
+
+    item.title = 'Ship the pricing page';
+
+    item.description = null;
+
+    item.status = 'todo';
+
+    item.ownerWorkspaceMemberId = null;
+
+    item.dueAt = new Date('2026-09-25T23:59:59.999Z');
+
+    item.blockerText = null;
+
+    item.acceptanceCriteria = [];
+
+    item.createdAt = new Date();
+
+    item.updatedAt = new Date();
+
+    const previousLink = new ExecutionObservationLinkEntity();
+
+    previousLink.observationId = 'observation-ownerless';
+
+    previousLink.meetingId = meeting.id;
+
+    previousLink.sprintItemId = item.id;
+
+    previousLink.kind = 'commitment';
+
+    previousLink.evidenceEventId = 'evidence-ownerless';
+
+    const linksRepository = {
+      findOne: vi.fn().mockImplementation(
+        async (options: {
+          where?: {
+            observationId?: string;
+          };
+        }) => {
+          const observationId = options.where?.observationId;
+
+          if (observationId === 'observation-refined') {
+            return null;
+          }
+
+          if (observationId === previousLink.observationId) {
+            return previousLink;
+          }
+
+          return null;
+        },
+      ),
+
+      create: vi
+        .fn()
+        .mockImplementation((values: Partial<ExecutionObservationLinkEntity>) =>
+          Object.assign(new ExecutionObservationLinkEntity(), values),
+        ),
+
+      save: vi
+        .fn()
+        .mockImplementation(
+          async (link: ExecutionObservationLinkEntity) => link,
+        ),
+    };
+
+    const meetingsRepository = {
+      findOne: vi.fn().mockResolvedValue(meeting),
+    };
+
+    const ownerQueryBuilder = {
+      innerJoinAndSelect: vi.fn(),
+
+      where: vi.fn(),
+
+      andWhere: vi.fn(),
+
+      take: vi.fn(),
+
+      getMany: vi.fn().mockResolvedValue([owner]),
+    };
+
+    ownerQueryBuilder.innerJoinAndSelect.mockReturnValue(ownerQueryBuilder);
+
+    ownerQueryBuilder.where.mockReturnValue(ownerQueryBuilder);
+
+    ownerQueryBuilder.andWhere.mockReturnValue(ownerQueryBuilder);
+
+    ownerQueryBuilder.take.mockReturnValue(ownerQueryBuilder);
+
+    const membersRepository = {
+      createQueryBuilder: vi.fn().mockReturnValue(ownerQueryBuilder),
+
+      findOne: vi.fn().mockResolvedValue(owner),
+    };
+
+    const itemsRepository = {
+      findOne: vi.fn().mockResolvedValue(item),
+
+      save: vi
+        .fn()
+        .mockImplementation(async (savedItem: SprintItemEntity) => savedItem),
+    };
+
+    const sprintsRepository = {
+      findOne: vi.fn(),
+    };
+
+    const manager = {
+      getRepository: vi.fn().mockImplementation((entity: unknown) => {
+        if (entity === ExecutionObservationLinkEntity) {
+          return linksRepository;
+        }
+
+        if (entity === MeetingEntity) {
+          return meetingsRepository;
+        }
+
+        if (entity === WorkspaceMemberEntity) {
+          return membersRepository;
+        }
+
+        if (entity === SprintItemEntity) {
+          return itemsRepository;
+        }
+
+        if (entity === SprintEntity) {
+          return sprintsRepository;
+        }
+
+        throw new Error('Unexpected repository access');
+      }),
+    } as unknown as EntityManager;
+
+    const service = new ExecutionService(createDataSource(manager));
+
+    const result = await service.applyCommitment({
+      meetingId: meeting.id,
+
+      observationId: 'observation-refined',
+
+      evidenceEventId: 'evidence-refined',
+
+      summary: 'Lumos Developer will ship the pricing page',
+
+      ownerWorkspaceMemberId: null,
+
+      ownerDisplayName: 'Lumos Developer',
+
+      dueAt: null,
+
+      supersedesObservationId: previousLink.observationId,
+    });
+
+    expect(result.ownerWorkspaceMemberId).toBe(owner.id);
+
+    expect(membersRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
+
+    expect(ownerQueryBuilder.getMany).toHaveBeenCalledTimes(1);
+
+    expect(membersRepository.findOne).toHaveBeenCalledWith({
+      where: {
+        id: owner.id,
+        workspaceId: meeting.workspaceId,
+      },
+    });
+
+    expect(result.id).toBe(item.id);
+
+    expect(result.dueAt).toEqual(new Date('2026-09-25T23:59:59.999Z'));
+
+    expect(sprintsRepository.findOne).not.toHaveBeenCalled();
+  });
+
+  it('does not resolve an ambiguous owner display name', async () => {
+    const meeting = new MeetingEntity();
+
+    meeting.id = '44444444-4444-4444-8444-444444444444';
+
+    meeting.workspaceId = '55555555-5555-4555-8555-555555555555';
+
+    const firstOwner = new WorkspaceMemberEntity();
+
+    firstOwner.id = '33333333-3333-4333-8333-333333333333';
+
+    firstOwner.workspaceId = meeting.workspaceId;
+
+    const secondOwner = new WorkspaceMemberEntity();
+
+    secondOwner.id = '66666666-6666-4666-8666-666666666666';
+
+    secondOwner.workspaceId = meeting.workspaceId;
+
+    const item = new SprintItemEntity();
+
+    item.id = '11111111-1111-4111-8111-111111111111';
+
+    item.sprintId = '22222222-2222-4222-8222-222222222222';
+
+    item.title = 'Ship the pricing page';
+
+    item.description = null;
+
+    item.status = 'todo';
+
+    item.ownerWorkspaceMemberId = null;
+
+    item.dueAt = new Date('2026-09-25T23:59:59.999Z');
+
+    item.blockerText = null;
+
+    item.acceptanceCriteria = [];
+
+    item.createdAt = new Date();
+
+    item.updatedAt = new Date();
+
+    const previousLink = new ExecutionObservationLinkEntity();
+
+    previousLink.observationId = 'observation-ownerless';
+
+    previousLink.meetingId = meeting.id;
+
+    previousLink.sprintItemId = item.id;
+
+    previousLink.kind = 'commitment';
+
+    previousLink.evidenceEventId = 'evidence-ownerless';
+
+    const linksRepository = {
+      findOne: vi.fn().mockImplementation(
+        async (options: {
+          where?: {
+            observationId?: string;
+          };
+        }) => {
+          const observationId = options.where?.observationId;
+
+          if (observationId === 'observation-refined') {
+            return null;
+          }
+
+          if (observationId === previousLink.observationId) {
+            return previousLink;
+          }
+
+          return null;
+        },
+      ),
+
+      create: vi
+        .fn()
+        .mockImplementation((values: Partial<ExecutionObservationLinkEntity>) =>
+          Object.assign(new ExecutionObservationLinkEntity(), values),
+        ),
+
+      save: vi
+        .fn()
+        .mockImplementation(
+          async (link: ExecutionObservationLinkEntity) => link,
+        ),
+    };
+
+    const meetingsRepository = {
+      findOne: vi.fn().mockResolvedValue(meeting),
+    };
+
+    const ownerQueryBuilder = {
+      innerJoinAndSelect: vi.fn(),
+
+      where: vi.fn(),
+
+      andWhere: vi.fn(),
+
+      take: vi.fn(),
+
+      getMany: vi.fn().mockResolvedValue([firstOwner, secondOwner]),
+    };
+
+    ownerQueryBuilder.innerJoinAndSelect.mockReturnValue(ownerQueryBuilder);
+
+    ownerQueryBuilder.where.mockReturnValue(ownerQueryBuilder);
+
+    ownerQueryBuilder.andWhere.mockReturnValue(ownerQueryBuilder);
+
+    ownerQueryBuilder.take.mockReturnValue(ownerQueryBuilder);
+
+    const membersRepository = {
+      createQueryBuilder: vi.fn().mockReturnValue(ownerQueryBuilder),
+
+      findOne: vi.fn(),
+    };
+
+    const itemsRepository = {
+      findOne: vi.fn().mockResolvedValue(item),
+
+      save: vi
+        .fn()
+        .mockImplementation(async (savedItem: SprintItemEntity) => savedItem),
+    };
+
+    const sprintsRepository = {
+      findOne: vi.fn(),
+    };
+
+    const manager = {
+      getRepository: vi.fn().mockImplementation((entity: unknown) => {
+        if (entity === ExecutionObservationLinkEntity) {
+          return linksRepository;
+        }
+
+        if (entity === MeetingEntity) {
+          return meetingsRepository;
+        }
+
+        if (entity === WorkspaceMemberEntity) {
+          return membersRepository;
+        }
+
+        if (entity === SprintItemEntity) {
+          return itemsRepository;
+        }
+
+        if (entity === SprintEntity) {
+          return sprintsRepository;
+        }
+
+        throw new Error('Unexpected repository access');
+      }),
+    } as unknown as EntityManager;
+
+    const service = new ExecutionService(createDataSource(manager));
+
+    const result = await service.applyCommitment({
+      meetingId: meeting.id,
+
+      observationId: 'observation-refined',
+
+      evidenceEventId: 'evidence-refined',
+
+      summary: 'Alex will ship the pricing page',
+
+      ownerWorkspaceMemberId: null,
+
+      ownerDisplayName: 'Alex',
+
+      dueAt: null,
+
+      supersedesObservationId: previousLink.observationId,
+    });
+
+    expect(result.ownerWorkspaceMemberId).toBeNull();
+
+    expect(membersRepository.findOne).not.toHaveBeenCalled();
+
+    expect(result.id).toBe(item.id);
+
+    expect(result.dueAt).toEqual(new Date('2026-09-25T23:59:59.999Z'));
+
+    expect(sprintsRepository.findOne).not.toHaveBeenCalled();
   });
 });

@@ -24,6 +24,7 @@ import (
 	"lumos/realtime-go/internal/observability"
 	"lumos/realtime-go/internal/redisclient"
 	"lumos/realtime-go/internal/semantics"
+	"lumos/realtime-go/internal/tts"
 )
 
 const (
@@ -214,6 +215,61 @@ func main() {
 	)
 
 	// -------------------------------------------------------------------------
+	// Text-to-speech
+	// -------------------------------------------------------------------------
+
+	var ttsProviderFactory tts.ProviderFactory
+
+	switch cfg.TTSProvider {
+	case tts.ProviderEdge:
+		ttsProviderFactory =
+			func() (tts.Provider, error) {
+				return tts.NewEdgeProvider(
+					tts.EdgeOptions{
+						Language: cfg.TTSLanguage,
+
+						Voice: cfg.TTSVoice,
+
+						Rate: cfg.TTSRate,
+
+						Volume: cfg.TTSVolume,
+
+						Timeout: cfg.TTSTimeout,
+
+						MaxRetries: cfg.TTSMaxRetries,
+					},
+				)
+			}
+
+	default:
+		logger.Error(
+			"unsupported TTS provider",
+			"provider",
+			cfg.TTSProvider,
+		)
+
+		os.Exit(1)
+	}
+
+	logger.Info(
+		"TTS configured",
+		"provider",
+		cfg.TTSProvider,
+		"language",
+		cfg.TTSLanguage,
+		"voice",
+		cfg.TTSVoice,
+		"rate",
+		cfg.TTSRate,
+		"volume",
+		cfg.TTSVolume,
+		"timeout",
+		cfg.TTSTimeout,
+		"maxRetries",
+		cfg.TTSMaxRetries,
+	)
+
+	// -------------------------------------------------------------------------
 	// Per-meeting runtime factory
 	// -------------------------------------------------------------------------
 
@@ -222,10 +278,12 @@ func main() {
 		liveKitClient,
 		assemblyAIClient,
 		semanticExtractor,
+		ttsProviderFactory,
 		cfg.LiveKitBotIdentity,
 		logger,
 		metrics,
 	)
+
 	if err != nil {
 		logger.Error(
 			"failed to create meeting runtime",

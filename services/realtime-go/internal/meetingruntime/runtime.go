@@ -23,6 +23,7 @@ import (
 	"lumos/realtime-go/internal/redisstream"
 	"lumos/realtime-go/internal/semantics"
 	"lumos/realtime-go/internal/transcription"
+	"lumos/realtime-go/internal/tts"
 )
 
 const (
@@ -40,6 +41,8 @@ type Runtime struct {
 
 	extractor semantics.Extractor
 
+	ttsProviderFactory tts.ProviderFactory
+
 	botIdentity string
 
 	logger  *slog.Logger
@@ -51,6 +54,7 @@ func New(
 	liveKit *livekitclient.Client,
 	assemblyAI *assemblyai.Client,
 	extractor semantics.Extractor,
+	ttsProviderFactory tts.ProviderFactory,
 	botIdentity string,
 	logger *slog.Logger,
 	metrics ...*observability.Metrics,
@@ -76,6 +80,12 @@ func New(
 	if extractor == nil {
 		return nil, fmt.Errorf(
 			"meeting runtime semantic extractor is required",
+		)
+	}
+
+	if ttsProviderFactory == nil {
+		return nil, fmt.Errorf(
+			"meeting runtime TTS provider factory is required",
 		)
 	}
 
@@ -109,6 +119,8 @@ func New(
 		assemblyAI: assemblyAI,
 
 		extractor: extractor,
+
+		ttsProviderFactory: ttsProviderFactory,
 
 		botIdentity: botIdentity,
 
@@ -288,24 +300,6 @@ func (r *Runtime) Run(
 		)
 
 	// -------------------------------------------------------------------------
-	// Intervention consumer
-	// -------------------------------------------------------------------------
-
-	interventionSpeaker :=
-		intervention.NewLogSpeaker(
-			logger,
-		)
-
-	interventionConsumer :=
-		intervention.NewConsumer(
-			r.redisClient,
-			meetingID,
-			"realtime-intervention-"+uuid.NewString(),
-			interventionSpeaker,
-			logger,
-		)
-
-	// -------------------------------------------------------------------------
 	// Background semantic processing
 	// -------------------------------------------------------------------------
 
@@ -381,38 +375,6 @@ func (r *Runtime) Run(
 		}
 	})
 
-	backgroundWG.Go(func() {
-		err :=
-			interventionConsumer.Run(
-				processingCtx,
-			)
-
-		if processingCtx.Err() != nil {
-			return
-		}
-
-		if err != nil {
-			select {
-			case componentErr <- fmt.Errorf(
-				"intervention consumer: %w",
-				err,
-			):
-
-			case <-processingCtx.Done():
-			}
-
-			return
-		}
-
-		select {
-		case componentErr <- fmt.Errorf(
-			"intervention consumer stopped unexpectedly",
-		):
-
-		case <-processingCtx.Done():
-		}
-	})
-
 	// -------------------------------------------------------------------------
 	// Realtime transcription
 	// -------------------------------------------------------------------------
@@ -457,10 +419,141 @@ func (r *Runtime) Run(
 		)
 	}
 
+	// -------------------------------------------------------------------------
+	// TTS intervention output
+	// -------------------------------------------------------------------------
+
+	ttsProvider, err :=
+		r.ttsProviderFactory()
+	if err != nil {
+		stopMedia()
+
+		transcriptionManager.Close()
+
+		room.Disconnect()
+
+		evidenceDispatcher.Close()
+
+		stopProcessing()
+
+		waitForBackground(
+			&backgroundWG,
+			logger,
+		)
+
+		return fmt.Errorf(
+			"create TTS provider: %w",
+			err,
+		)
+	}
+
+	audioPublisher, err :=
+		livekitclient.NewPCMAudioPublisher(
+			room,
+			tts.EdgePCMSampleRate,
+			tts.EdgePCMChannels,
+		)
+	if err != nil {
+		stopMedia()
+
+		transcriptionManager.Close()
+
+		room.Disconnect()
+
+		evidenceDispatcher.Close()
+
+		stopProcessing()
+
+		waitForBackground(
+			&backgroundWG,
+			logger,
+		)
+
+		return fmt.Errorf(
+			"create LiveKit intervention audio publisher: %w",
+			err,
+		)
+	}
+
+	interventionSpeaker, err :=
+		intervention.NewTTSSpeaker(
+			ttsProvider,
+			audioPublisher,
+			logger,
+		)
+	if err != nil {
+		stopMedia()
+
+		transcriptionManager.Close()
+
+		room.Disconnect()
+
+		evidenceDispatcher.Close()
+
+		stopProcessing()
+
+		waitForBackground(
+			&backgroundWG,
+			logger,
+		)
+
+		return fmt.Errorf(
+			"create intervention TTS speaker: %w",
+			err,
+		)
+	}
+
+	interventionConsumer :=
+		intervention.NewConsumer(
+			r.redisClient,
+			meetingID,
+			"realtime-intervention-"+uuid.NewString(),
+			interventionSpeaker,
+			logger,
+		)
+
+	backgroundWG.Go(func() {
+		err :=
+			interventionConsumer.Run(
+				processingCtx,
+			)
+
+		if processingCtx.Err() != nil {
+			return
+		}
+
+		if err != nil {
+			select {
+			case componentErr <- fmt.Errorf(
+				"intervention consumer: %w",
+				err,
+			):
+
+			case <-processingCtx.Done():
+			}
+
+			return
+		}
+
+		select {
+		case componentErr <- fmt.Errorf(
+			"intervention consumer stopped unexpectedly",
+		):
+
+		case <-processingCtx.Done():
+		}
+	})
+
 	logger.Info(
 		"meeting runtime started",
 		"identity",
 		r.botIdentity,
+		"ttsProvider",
+		tts.ProviderEdge,
+		"ttsSampleRate",
+		tts.EdgePCMSampleRate,
+		"ttsChannels",
+		tts.EdgePCMChannels,
 	)
 
 	var runtimeErr error

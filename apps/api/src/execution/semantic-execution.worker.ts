@@ -24,9 +24,7 @@ const READ_BATCH_SIZE = 100;
 const EXECUTION_ACTIVATION_KEY = 'lumos:execution:semantic-activation-ms';
 
 @Injectable()
-export class SemanticExecutionWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class SemanticExecutionWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SemanticExecutionWorker.name);
   private timer: NodeJS.Timeout | null = null;
   private polling = false;
@@ -43,11 +41,7 @@ export class SemanticExecutionWorker
   async onModuleInit(): Promise<void> {
     const now = Date.now();
 
-    await this.redis.client.set(
-      EXECUTION_ACTIVATION_KEY,
-      String(now),
-      'NX',
-    );
+    await this.redis.client.set(EXECUTION_ACTIVATION_KEY, String(now), 'NX');
 
     const activationValue = await this.redis.client.get(
       EXECUTION_ACTIVATION_KEY,
@@ -68,21 +62,16 @@ export class SemanticExecutionWorker
     // are still eligible for processing.
     this.activationCursor = `${Math.max(0, activationMs - 1)}-999999`;
 
-    this.timer = setInterval(
-      () => {
-        void this.pollSafely();
-      },
-      POLL_INTERVAL_MS,
-    );
+    this.timer = setInterval(() => {
+      void this.pollSafely();
+    }, POLL_INTERVAL_MS);
 
     await this.pollSafely();
   }
 
   onModuleDestroy(): void {
     if (this.timer) {
-      clearInterval(
-        this.timer,
-      );
+      clearInterval(this.timer);
 
       this.timer = null;
     }
@@ -100,9 +89,7 @@ export class SemanticExecutionWorker
     } catch (error) {
       this.logger.error(
         'Semantic execution poll failed',
-        error instanceof Error
-          ? error.stack
-          : undefined,
+        error instanceof Error ? error.stack : undefined,
       );
     } finally {
       this.polling = false;
@@ -124,9 +111,7 @@ export class SemanticExecutionWorker
             'Semantic execution meeting processing failed',
             `meetingId=${meeting.id}`,
           ].join(' '),
-          error instanceof Error
-            ? error.stack
-            : undefined,
+          error instanceof Error ? error.stack : undefined,
         );
       }
     }
@@ -149,11 +134,7 @@ export class SemanticExecutionWorker
     // new observations are not lost if they arrive
     // before this worker first sees the meeting.
     if (cursor === null) {
-      await this.redis.client.set(
-        cursorKey,
-        this.activationCursor,
-        'NX',
-      );
+      await this.redis.client.set(cursorKey, this.activationCursor, 'NX');
 
       cursor = await this.redis.client.get(cursorKey);
 
@@ -172,9 +153,7 @@ export class SemanticExecutionWorker
       );
     }
 
-    const start = cursor === '0-0'
-      ? '-'
-      : `(${cursor}`;
+    const start = cursor === '0-0' ? '-' : `(${cursor}`;
 
     const entries = await this.redis.client.xrange(
       streamKey,
@@ -184,19 +163,11 @@ export class SemanticExecutionWorker
       READ_BATCH_SIZE,
     );
 
-    for (
-      const [
-        streamId,
-        fields,
-      ] of entries
-      ) {
+    for (const [streamId, fields] of entries) {
       const values = redisFieldsToRecord(fields);
 
       if (values.event_type !== SEMANTIC_EVENT_TYPE) {
-        await this.saveCursor(
-          meetingId,
-          streamId,
-        );
+        await this.saveCursor(meetingId, streamId);
 
         continue;
       }
@@ -212,10 +183,7 @@ export class SemanticExecutionWorker
           ].join(' '),
         );
 
-        await this.saveCursor(
-          meetingId,
-          streamId,
-        );
+        await this.saveCursor(meetingId, streamId);
 
         continue;
       }
@@ -233,10 +201,7 @@ export class SemanticExecutionWorker
           ].join(' '),
         );
 
-        await this.saveCursor(
-          meetingId,
-          streamId,
-        );
+        await this.saveCursor(meetingId, streamId);
 
         continue;
       }
@@ -252,10 +217,7 @@ export class SemanticExecutionWorker
           ].join(' '),
         );
 
-        await this.saveCursor(
-          meetingId,
-          streamId,
-        );
+        await this.saveCursor(meetingId, streamId);
 
         continue;
       }
@@ -268,10 +230,7 @@ export class SemanticExecutionWorker
       // Decisions / proposals / questions remain
       // semantic meeting observations for now.
       if (observation.kind !== 'commitment') {
-        await this.saveCursor(
-          meetingId,
-          streamId,
-        );
+        await this.saveCursor(meetingId, streamId);
 
         continue;
       }
@@ -286,10 +245,7 @@ export class SemanticExecutionWorker
 
       const referenceTime = this.streamTime(streamId);
 
-      const dueAt = this.resolveDueDate(
-        observation.dueText,
-        referenceTime,
-      );
+      const dueAt = this.resolveDueDate(observation.dueText, referenceTime);
 
       // IMPORTANT:
       //
@@ -308,15 +264,17 @@ export class SemanticExecutionWorker
         evidenceEventId: observation.evidenceEventId,
         summary: observation.summary,
         ownerWorkspaceMemberId,
+        ownerDisplayName:
+          ownerWorkspaceMemberId === null && owner.trim() !== ''
+            ? owner.trim()
+            : null,
         dueAt,
         supersedesObservationId: observation.supersedesObservationId,
       });
 
-      const resolvedOwnerWorkspaceMemberId =
-        sprintItem.ownerWorkspaceMemberId;
+      const resolvedOwnerWorkspaceMemberId = sprintItem.ownerWorkspaceMemberId;
 
-      const resolvedDueAt =
-        sprintItem.dueAt;
+      const resolvedDueAt = sprintItem.dueAt;
 
       if (resolvedOwnerWorkspaceMemberId) {
         await this.interventionPublisher.resolveGap(
@@ -342,17 +300,14 @@ export class SemanticExecutionWorker
         meetingId,
         sprintItemId: sprintItem.id,
         observation,
-        ownerWorkspaceMemberId:
-        resolvedOwnerWorkspaceMemberId,
+        ownerWorkspaceMemberId: resolvedOwnerWorkspaceMemberId,
         dueAt: resolvedDueAt,
         createdAt: referenceTime,
       });
 
       for (const intervention of interventions) {
         const publishResult =
-          await this.interventionPublisher.publish(
-            intervention,
-          );
+          await this.interventionPublisher.publish(intervention);
 
         this.logger.log(
           [
@@ -368,10 +323,7 @@ export class SemanticExecutionWorker
         );
       }
 
-      await this.saveCursor(
-        meetingId,
-        streamId,
-      );
+      await this.saveCursor(meetingId, streamId);
 
       this.logger.log(
         [
@@ -402,9 +354,7 @@ export class SemanticExecutionWorker
     dueText: string | undefined,
     referenceTime: Date,
   ): Date | null {
-    const normalized = dueText
-      ?.trim()
-      .toLowerCase();
+    const normalized = dueText?.trim().toLowerCase();
 
     if (!normalized) {
       return null;
@@ -440,44 +390,24 @@ export class SemanticExecutionWorker
 
     const currentWeekday = due.getUTCDay();
 
-    let daysAhead = (
-      targetWeekday -
-      currentWeekday +
-      7
-    ) % 7;
+    let daysAhead = (targetWeekday - currentWeekday + 7) % 7;
 
     if (daysAhead === 0) {
       daysAhead = 7;
     }
 
-    due.setUTCDate(
-      due.getUTCDate() + daysAhead,
-    );
+    due.setUTCDate(due.getUTCDate() + daysAhead);
 
-    due.setUTCHours(
-      23,
-      59,
-      59,
-      999,
-    );
+    due.setUTCHours(23, 59, 59, 999);
 
     return due;
   }
 
   private executionCursorKey(meetingId: string): string {
-    return (
-      `lumos:meeting:{${meetingId}}:` +
-      'execution-cursor'
-    );
+    return `lumos:meeting:{${meetingId}}:` + 'execution-cursor';
   }
 
-  private async saveCursor(
-    meetingId: string,
-    streamId: string,
-  ): Promise<void> {
-    await this.redis.client.set(
-      this.executionCursorKey(meetingId),
-      streamId,
-    );
+  private async saveCursor(meetingId: string, streamId: string): Promise<void> {
+    await this.redis.client.set(this.executionCursorKey(meetingId), streamId);
   }
 }

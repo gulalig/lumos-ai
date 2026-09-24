@@ -24,7 +24,7 @@ describe('InterventionService', () => {
     };
   }
 
-  it('asks for owner first when owner is missing', () => {
+  it('asks naturally for owner first when owner is missing', () => {
     const result = service.evaluate({
       meetingId: 'meeting-1',
       sprintItemId: 'sprint-item-1',
@@ -40,11 +40,11 @@ describe('InterventionService', () => {
       sprintItemId: 'sprint-item-1',
       observationId: 'observation-1',
       reason: 'missing_owner',
-      message: 'Who owns this commitment?',
+      message: "Got it — who's taking this one?",
     });
   });
 
-  it('asks for due date when owner exists but due date is missing', () => {
+  it('asks naturally for due date when owner exists but due date is missing', () => {
     const result = service.evaluate({
       meetingId: 'meeting-1',
       sprintItemId: 'sprint-item-1',
@@ -62,7 +62,7 @@ describe('InterventionService', () => {
       sprintItemId: 'sprint-item-1',
       observationId: 'observation-1',
       reason: 'missing_due_date',
-      message: 'When is this commitment due?',
+      message: 'Got it. When do we need this done?',
     });
   });
 
@@ -111,7 +111,7 @@ describe('InterventionService', () => {
 
     expect(result[0]).toMatchObject({
       reason: 'missing_owner',
-      message: 'Who owns this commitment?',
+      message: "Got it — who's taking this one?",
     });
   });
 
@@ -131,7 +131,7 @@ describe('InterventionService', () => {
 
     expect(result[0]).toMatchObject({
       reason: 'missing_due_date',
-      message: 'When is this commitment due?',
+      message: 'Got it. When do we need this done?',
     });
   });
 
@@ -156,11 +156,7 @@ describe('InterventionService', () => {
       dueAt: null,
     });
 
-    expect(
-      first[0].gapId,
-    ).toBe(
-      second[0].gapId,
-    );
+    expect(first[0].gapId).toBe(second[0].gapId);
   });
 
   it('uses different request ids for different observations of the same gap', () => {
@@ -184,11 +180,7 @@ describe('InterventionService', () => {
       dueAt: null,
     });
 
-    expect(
-      first[0].id,
-    ).not.toBe(
-      second[0].id,
-    );
+    expect(first[0].id).not.toBe(second[0].id);
   });
 
   it('produces different intervention ids for different gap reasons', () => {
@@ -208,10 +200,6 @@ describe('InterventionService', () => {
       dueAt: null,
     });
 
-    expect(
-      missingOwner[0].id,
-    ).not.toBe(
-      missingDueDate[0].id,
-    );
+    expect(missingOwner[0].id).not.toBe(missingDueDate[0].id);
   });
 });

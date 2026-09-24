@@ -11,10 +11,8 @@ const (
 	// Normal conversational adjacency.
 	MaxAdjacentTurnGap = 5 * time.Second
 
-	// A user may correct a commitment after a short pause.
-	//
-	// We only use this wider window when the CURRENT turn
-	// contains an explicit correction / revision cue.
+	// A user may answer a Lumos clarification or explicitly
+	// correct/refine a commitment after a short pause.
 	MaxRefinementTurnGap = 45 * time.Second
 )
 
@@ -104,11 +102,109 @@ func NewOwnershipRefinementContext(
 		return context
 	}
 
-	// This path exists specifically for another
-	// participant answering an unresolved ownership
-	// question.
-	if previous.ParticipantID ==
-		current.ParticipantID {
+	sameParticipant :=
+		previous.ParticipantID ==
+			current.ParticipantID
+
+	if previous.CapturedAt.IsZero() ||
+		current.CapturedAt.IsZero() {
+
+		return context
+	}
+
+	gap :=
+		current.CapturedAt.Sub(
+			previous.CapturedAt,
+		)
+
+	if gap < 0 ||
+		gap > MaxRefinementTurnGap {
+
+		return context
+	}
+
+	if sameParticipant {
+		// Same speaker may answer Lumos with:
+		//
+		//   "I'll take it."
+		//   "Alex will ship the pricing page."
+		if !containsExplicitOwnershipAcceptance(
+			current.Text,
+		) &&
+			!containsExplicitNamedOwnershipAssignment(
+				current.Text,
+			) {
+
+			return context
+		}
+	} else {
+		// A different participant may only explicitly claim
+		// ownership for themselves.
+		if !containsExplicitOwnershipAcceptance(
+			current.Text,
+		) {
+
+			return context
+		}
+	}
+
+	previousCopy :=
+		*previous
+
+	context.Previous =
+		&previousCopy
+
+	return context
+}
+
+// NewDueDateRefinementContext exists specifically for the
+// conversational flow:
+//
+//	commitment -> Lumos asks for due date -> participant answers
+//
+// For example:
+//
+//	"Lumos Developer will ship the pricing page."
+//	Lumos: "When do we need this done?"
+//	"On Friday."
+//
+// Lumos speech is not itself an evidence turn, so the previous
+// participant turn may be more than MaxAdjacentTurnGap seconds old.
+// We therefore allow a narrow, bounded clarification window.
+//
+// This function does NOT decide that a commitment is actually
+// missing a due date. The meeting actor only calls it when its
+// previous semantic state contains exactly one commitment with
+// an owner and no due date.
+func NewDueDateRefinementContext(
+	previous *evidence.Turn,
+	current evidence.Turn,
+) EvidenceContext {
+	context :=
+		EvidenceContext{
+			Current: current,
+		}
+
+	if previous == nil {
+		return context
+	}
+
+	if previous.EventID == "" ||
+		current.EventID == "" {
+
+		return context
+	}
+
+	if previous.EventID ==
+		current.EventID {
+
+		return context
+	}
+
+	if previous.MeetingID == "" ||
+		current.MeetingID == "" ||
+		previous.MeetingID !=
+			current.MeetingID {
 
 		return context
 	}
@@ -130,10 +226,9 @@ func NewOwnershipRefinementContext(
 		return context
 	}
 
-	if !containsExplicitOwnershipAcceptance(
+	if !containsExplicitDueDateAnswer(
 		current.Text,
 	) {
-
 		return context
 	}
 
@@ -295,4 +390,141 @@ func (c EvidenceContext) GroundingText() string {
 			"\n" +
 			c.Current.Text,
 	)
+}
+
+func containsExplicitDueDateAnswer(
+	text string,
+) bool {
+	normalized :=
+		strings.ToLower(
+			strings.TrimSpace(
+				text,
+			),
+		)
+
+	normalized =
+		strings.Trim(
+			normalized,
+			" \t\r\n.,!?;:",
+		)
+
+	if normalized == "" {
+		return false
+	}
+
+	weekdays :=
+		[]string{
+			"monday",
+			"tuesday",
+			"wednesday",
+			"thursday",
+			"friday",
+			"saturday",
+			"sunday",
+		}
+
+	for _, weekday := range weekdays {
+		allowed :=
+			[]string{
+				weekday,
+				"on " + weekday,
+				"by " + weekday,
+				"this " + weekday,
+				"next " + weekday,
+				"on this " + weekday,
+				"on next " + weekday,
+				"by this " + weekday,
+				"by next " + weekday,
+				weekday + " works",
+				weekday + " should work",
+				weekday + " is fine",
+				weekday + " is good",
+			}
+
+		for _, value := range allowed {
+			if normalized == value {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func containsExplicitNamedOwnershipAssignment(
+	text string,
+) bool {
+	normalized :=
+		" " +
+			strings.Join(
+				strings.Fields(
+					strings.ToLower(
+						strings.TrimSpace(
+							text,
+						),
+					),
+				),
+				" ",
+			) +
+			" "
+
+	if normalized == "  " {
+		return false
+	}
+
+	// Common explicit third-person ownership statements.
+	markers := []string{
+		" is responsible for ",
+		" owns this ",
+		" owns it ",
+		" is taking this ",
+		" is taking it ",
+	}
+
+	for _, marker := range markers {
+		if strings.Contains(
+			normalized,
+			marker,
+		) {
+			return true
+		}
+	}
+
+	// Named future assignment:
+	//
+	//   "Alex will ship the pricing page."
+	//
+	// Exclude pronoun/team forms because they do not establish
+	// a grounded named owner.
+	const willMarker = " will "
+
+	index :=
+		strings.Index(
+			normalized,
+			willMarker,
+		)
+
+	if index < 0 {
+		return false
+	}
+
+	subject :=
+		strings.TrimSpace(
+			normalized[:index],
+		)
+
+	switch subject {
+	case "",
+		"i",
+		"we",
+		"you",
+		"he",
+		"she",
+		"they",
+		"it":
+
+		return false
+	}
+
+	return true
 }

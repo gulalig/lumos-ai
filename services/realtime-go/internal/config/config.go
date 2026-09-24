@@ -3,7 +3,9 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -26,11 +28,40 @@ type Config struct {
 	GroqModel         string
 	GroqFallbackModel string
 
+	TTSProvider string
+	TTSLanguage string
+	TTSVoice    string
+	TTSRate     string
+	TTSVolume   string
+
+	TTSTimeout    time.Duration
+	TTSMaxRetries int
+
 	RealtimePort string
 }
 
 func Load() (Config, error) {
 	if err := loadDotEnv(); err != nil {
+		return Config{}, err
+	}
+
+	ttsTimeout,
+		err :=
+		parseDurationEnvironment(
+			"TTS_TIMEOUT",
+			8*time.Second,
+		)
+	if err != nil {
+		return Config{}, err
+	}
+
+	ttsMaxRetries,
+		err :=
+		parseIntegerEnvironment(
+			"TTS_MAX_RETRIES",
+			2,
+		)
+	if err != nil {
 		return Config{}, err
 	}
 
@@ -85,14 +116,46 @@ func Load() (Config, error) {
 			os.Getenv("GROQ_FALLBACK_MODEL"),
 		),
 
+		TTSProvider: strings.ToLower(
+			strings.TrimSpace(
+				os.Getenv("TTS_PROVIDER"),
+			),
+		),
+
+		TTSLanguage: strings.TrimSpace(
+			os.Getenv("TTS_LANGUAGE"),
+		),
+
+		TTSVoice: strings.TrimSpace(
+			os.Getenv("TTS_VOICE"),
+		),
+
+		TTSRate: strings.TrimSpace(
+			os.Getenv("TTS_RATE"),
+		),
+
+		TTSVolume: strings.TrimSpace(
+			os.Getenv("TTS_VOLUME"),
+		),
+
+		TTSTimeout: ttsTimeout,
+
+		TTSMaxRetries: ttsMaxRetries,
+
 		RealtimePort: strings.TrimSpace(
 			os.Getenv("REALTIME_PORT"),
 		),
 	}
 
-	applyDefaults(&cfg)
+	applyDefaults(
+		&cfg,
+	)
 
-	if err := validate(cfg); err != nil {
+	if err :=
+		validate(
+			cfg,
+		); err != nil {
+
 		return Config{}, err
 	}
 
@@ -103,7 +166,8 @@ func applyDefaults(
 	cfg *Config,
 ) {
 	if cfg.RealtimePort == "" {
-		cfg.RealtimePort = "8081"
+		cfg.RealtimePort =
+			"8081"
 	}
 
 	if cfg.AssemblyAIStreamingURL == "" {
@@ -112,7 +176,8 @@ func applyDefaults(
 	}
 
 	if cfg.SemanticProvider == "" {
-		cfg.SemanticProvider = "groq"
+		cfg.SemanticProvider =
+			"groq"
 	}
 
 	if cfg.GroqBaseURL == "" {
@@ -129,26 +194,53 @@ func applyDefaults(
 		cfg.GroqFallbackModel =
 			"openai/gpt-oss-120b"
 	}
+
+	if cfg.TTSProvider == "" {
+		cfg.TTSProvider =
+			"edge"
+	}
+
+	if cfg.TTSLanguage == "" {
+		cfg.TTSLanguage =
+			"en-US"
+	}
+
+	if cfg.TTSVoice == "" {
+		cfg.TTSVoice =
+			"en-US-AriaNeural"
+	}
+
+	if cfg.TTSRate == "" {
+		cfg.TTSRate =
+			"+0%"
+	}
+
+	if cfg.TTSVolume == "" {
+		cfg.TTSVolume =
+			"+0%"
+	}
 }
 
 func validate(
 	cfg Config,
 ) error {
-	required := map[string]string{
-		"REDIS_URL": cfg.RedisURL,
+	required :=
+		map[string]string{
+			"REDIS_URL": cfg.RedisURL,
 
-		"LIVEKIT_BOT_IDENTITY": cfg.LiveKitBotIdentity,
+			"LIVEKIT_BOT_IDENTITY": cfg.LiveKitBotIdentity,
 
-		"LIVEKIT_URL": cfg.LiveKitURL,
+			"LIVEKIT_URL": cfg.LiveKitURL,
 
-		"LIVEKIT_API_KEY": cfg.LiveKitAPIKey,
+			"LIVEKIT_API_KEY": cfg.LiveKitAPIKey,
 
-		"LIVEKIT_API_SECRET": cfg.LiveKitAPISecret,
+			"LIVEKIT_API_SECRET": cfg.LiveKitAPISecret,
 
-		"ASSEMBLYAI_API_KEY": cfg.AssemblyAIAPIKey,
-	}
+			"ASSEMBLYAI_API_KEY": cfg.AssemblyAIAPIKey,
+		}
 
 	for name, value := range required {
+
 		if value == "" {
 			return fmt.Errorf(
 				"required environment variable %s is missing",
@@ -190,22 +282,133 @@ func validate(
 		)
 	}
 
+	switch cfg.TTSProvider {
+	case "edge":
+		if cfg.TTSLanguage == "" {
+			return fmt.Errorf(
+				"TTS_LANGUAGE is required when TTS_PROVIDER=edge",
+			)
+		}
+
+		if cfg.TTSVoice == "" {
+			return fmt.Errorf(
+				"TTS_VOICE is required when TTS_PROVIDER=edge",
+			)
+		}
+
+	default:
+		return fmt.Errorf(
+			"unsupported TTS provider %q",
+			cfg.TTSProvider,
+		)
+	}
+
+	if cfg.TTSTimeout <= 0 {
+		return fmt.Errorf(
+			"TTS_TIMEOUT must be positive",
+		)
+	}
+
+	if cfg.TTSMaxRetries < 0 ||
+		cfg.TTSMaxRetries > 5 {
+
+		return fmt.Errorf(
+			"TTS_MAX_RETRIES must be between 0 and 5",
+		)
+	}
+
 	return nil
 }
 
-func loadDotEnv() error {
-	candidates := []string{
-		".env",
-		"../../.env",
+func parseDurationEnvironment(
+	name string,
+	defaultValue time.Duration,
+) (time.Duration, error) {
+	value :=
+		strings.TrimSpace(
+			os.Getenv(
+				name,
+			),
+		)
+
+	if value == "" {
+		return defaultValue,
+			nil
 	}
 
+	parsed,
+		err :=
+		time.ParseDuration(
+			value,
+		)
+	if err != nil {
+		return 0,
+			fmt.Errorf(
+				"parse %s: %w",
+				name,
+				err,
+			)
+	}
+
+	return parsed,
+		nil
+}
+
+func parseIntegerEnvironment(
+	name string,
+	defaultValue int,
+) (int, error) {
+	value :=
+		strings.TrimSpace(
+			os.Getenv(
+				name,
+			),
+		)
+
+	if value == "" {
+		return defaultValue,
+			nil
+	}
+
+	parsed,
+		err :=
+		strconv.Atoi(
+			value,
+		)
+	if err != nil {
+		return 0,
+			fmt.Errorf(
+				"parse %s: %w",
+				name,
+				err,
+			)
+	}
+
+	return parsed,
+		nil
+}
+
+func loadDotEnv() error {
+	candidates :=
+		[]string{
+			".env",
+			"../../.env",
+		}
+
 	for _, path := range candidates {
-		_, err := os.Stat(path)
+
+		_,
+			err :=
+			os.Stat(
+				path,
+			)
 
 		if err == nil {
-			if err := godotenv.Load(
-				path,
-			); err != nil {
+			if err :=
+				godotenv.Load(
+					path,
+				); err != nil {
+
 				return fmt.Errorf(
 					"load environment file %s: %w",
 					path,
@@ -216,7 +419,9 @@ func loadDotEnv() error {
 			return nil
 		}
 
-		if !os.IsNotExist(err) {
+		if !os.IsNotExist(
+			err,
+		) {
 			return fmt.Errorf(
 				"inspect environment file %s: %w",
 				path,
