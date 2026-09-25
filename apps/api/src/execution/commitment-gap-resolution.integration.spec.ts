@@ -290,7 +290,7 @@ describe('commitment gap resolution integration', () => {
 
     expect(firstIntervention.reason).toBe('missing_owner');
 
-    expect(firstIntervention.message).toBe('Who owns this commitment?');
+    expect(firstIntervention.message).toBe("Got it — who's taking this one?");
 
     const gapId = interventionGapId(firstItem.id, 'missing_owner');
 
