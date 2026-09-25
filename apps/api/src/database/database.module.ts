@@ -20,6 +20,7 @@ import { SprintItemEntity } from '../sprints/entities/sprint-item.entity.js';
 import { SprintEntity } from '../sprints/entities/sprint.entity.js';
 
 import { DatabaseService } from './database.service.js';
+import { AtlassianConnectionEntity } from '../integrations/jira/entities/atlassian-connection.entity.js';
 
 @Global()
 @Module({
@@ -27,17 +28,12 @@ import { DatabaseService } from './database.service.js';
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
 
-      useFactory: (
-        config: ConfigService<Env, true>,
-      ) => ({
+      useFactory: (config: ConfigService<Env, true>) => ({
         type: 'postgres' as const,
 
-        url: config.get(
-          'DATABASE_URL',
-          {
-            infer: true,
-          },
-        ),
+        url: config.get('DATABASE_URL', {
+          infer: true,
+        }),
 
         entities: [
           UserEntity,
@@ -50,6 +46,7 @@ import { DatabaseService } from './database.service.js';
           SprintEntity,
           SprintItemEntity,
 
+          AtlassianConnectionEntity,
           JiraIssueMappingEntity,
           JiraSprintMappingEntity,
 
@@ -63,13 +60,8 @@ import { DatabaseService } from './database.service.js';
     }),
   ],
 
-  providers: [
-    DatabaseService,
-  ],
+  providers: [DatabaseService],
 
-  exports: [
-    DatabaseService,
-    TypeOrmModule,
-  ],
+  exports: [DatabaseService, TypeOrmModule],
 })
 export class DatabaseModule {}
