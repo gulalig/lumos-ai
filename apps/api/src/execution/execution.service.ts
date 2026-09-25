@@ -12,6 +12,7 @@ import { SprintItemEntity } from '../sprints/entities/sprint-item.entity.js';
 import { SprintEntity } from '../sprints/entities/sprint.entity.js';
 
 import { ExecutionObservationLinkEntity } from './entities/execution-observation-link.entity.js';
+import { JiraSyncOutboxRepository } from '../integrations/jira/jira-sync-outbox.repository.js';
 
 export interface ApplyCommitmentInput {
   meetingId: string;
@@ -26,7 +27,10 @@ export interface ApplyCommitmentInput {
 
 @Injectable()
 export class ExecutionService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly jiraSyncOutbox: JiraSyncOutboxRepository,
+  ) {}
 
   async applyCommitment(
     input: ApplyCommitmentInput,
@@ -193,6 +197,8 @@ export class ExecutionService {
       });
 
       await links.save(link);
+
+      await this.jiraSyncOutbox.enqueue(meeting.workspaceId, item.id, manager);
 
       return item;
     });

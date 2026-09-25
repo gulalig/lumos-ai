@@ -8,6 +8,7 @@ import { SprintEntity } from '../sprints/entities/sprint.entity.js';
 
 import { ExecutionObservationLinkEntity } from './entities/execution-observation-link.entity.js';
 import { ExecutionService } from './execution.service.js';
+import { JiraSyncOutboxRepository } from '../integrations/jira/jira-sync-outbox.repository.js';
 
 function createDataSource(manager: EntityManager): DataSource {
   return {
@@ -18,6 +19,12 @@ function createDataSource(manager: EntityManager): DataSource {
           work(manager),
       ),
   } as unknown as DataSource;
+}
+
+function createJiraSyncOutbox(): JiraSyncOutboxRepository {
+  return {
+    enqueue: vi.fn().mockResolvedValue(undefined),
+  } as unknown as JiraSyncOutboxRepository;
 }
 
 describe('ExecutionService', () => {
@@ -78,7 +85,10 @@ describe('ExecutionService', () => {
       }),
     } as unknown as EntityManager;
 
-    const service = new ExecutionService(createDataSource(manager));
+    const service = new ExecutionService(
+      createDataSource(manager),
+      createJiraSyncOutbox(),
+    );
 
     const result = await service.applyCommitment({
       meetingId: existingLink.meetingId,
@@ -232,7 +242,10 @@ describe('ExecutionService', () => {
       }),
     } as unknown as EntityManager;
 
-    const service = new ExecutionService(createDataSource(manager));
+    const service = new ExecutionService(
+      createDataSource(manager),
+      createJiraSyncOutbox(),
+    );
 
     const newDueAt = new Date('2026-09-24T12:00:00.000Z');
 
@@ -430,7 +443,10 @@ describe('ExecutionService', () => {
       }),
     } as unknown as EntityManager;
 
-    const service = new ExecutionService(createDataSource(manager));
+    const service = new ExecutionService(
+      createDataSource(manager),
+      createJiraSyncOutbox(),
+    );
 
     const result = await service.applyCommitment({
       meetingId: meeting.id,
@@ -627,7 +643,10 @@ describe('ExecutionService', () => {
       }),
     } as unknown as EntityManager;
 
-    const service = new ExecutionService(createDataSource(manager));
+    const service = new ExecutionService(
+      createDataSource(manager),
+      createJiraSyncOutbox(),
+    );
 
     const result = await service.applyCommitment({
       meetingId: meeting.id,

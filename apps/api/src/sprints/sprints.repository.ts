@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
-import { Repository } from 'typeorm';
+import {
+  EntityManager,
+  Repository,
+} from 'typeorm';
 
 import { SprintItemEntity } from './entities/sprint-item.entity.js';
 import { SprintEntity } from './entities/sprint.entity.js';
@@ -33,24 +36,47 @@ export class SprintsRepository {
     private readonly items: Repository<SprintItemEntity>,
   ) {}
 
-  async createSprint(input: CreateSprintInput): Promise<SprintEntity> {
-    const sprint = this.sprints.create({
-      id: randomUUID(),
-      workspaceId: input.workspaceId,
-      name: input.name,
-      goal: input.goal ?? null,
-      status: 'planned',
-      startsAt: input.startsAt ?? null,
-      endsAt: input.endsAt ?? null,
-    });
+  async createSprint(
+    input: CreateSprintInput,
+    manager?: EntityManager,
+  ): Promise<SprintEntity> {
+    const repository =
+      manager?.getRepository(
+        SprintEntity,
+      ) ?? this.sprints;
 
-    return this.sprints.save(sprint);
+    const sprint =
+      repository.create({
+        id: randomUUID(),
+        workspaceId:
+        input.workspaceId,
+        name:
+        input.name,
+        goal:
+          input.goal ?? null,
+        status:
+          'planned',
+        startsAt:
+          input.startsAt ?? null,
+        endsAt:
+          input.endsAt ?? null,
+      });
+
+    return repository.save(
+      sprint,
+    );
   }
 
   async findActiveByWorkspace(
     workspaceId: string,
+    manager?: EntityManager,
   ): Promise<SprintEntity | null> {
-    return this.sprints.findOne({
+    const repository =
+      manager?.getRepository(
+        SprintEntity,
+      ) ?? this.sprints;
+
+    return repository.findOne({
       where: {
         workspaceId,
         status: 'active',
@@ -62,37 +88,86 @@ export class SprintsRepository {
     });
   }
 
-  async findSprintById(id: string): Promise<SprintEntity | null> {
-    return this.sprints.findOne({
-      where: { id },
+  async findSprintById(
+    id: string,
+    manager?: EntityManager,
+  ): Promise<SprintEntity | null> {
+    const repository =
+      manager?.getRepository(
+        SprintEntity,
+      ) ?? this.sprints;
+
+    return repository.findOne({
+      where: {
+        id,
+      },
     });
   }
 
   async createItem(
     input: CreateSprintItemInput,
+    manager?: EntityManager,
   ): Promise<SprintItemEntity> {
-    const item = this.items.create({
-      id: randomUUID(),
-      sprintId: input.sprintId,
-      title: input.title,
-      description: input.description ?? null,
-      status: 'todo',
-      ownerWorkspaceMemberId: input.ownerWorkspaceMemberId ?? null,
-      dueAt: input.dueAt ?? null,
-      blockerText: null,
-      acceptanceCriteria: input.acceptanceCriteria ?? [],
-    });
+    const repository =
+      manager?.getRepository(
+        SprintItemEntity,
+      ) ?? this.items;
 
-    return this.items.save(item);
+    const item =
+      repository.create({
+        id: randomUUID(),
+        sprintId:
+        input.sprintId,
+        title:
+        input.title,
+        description:
+          input.description ?? null,
+        status:
+          'todo',
+        ownerWorkspaceMemberId:
+          input.ownerWorkspaceMemberId ??
+          null,
+        dueAt:
+          input.dueAt ?? null,
+        blockerText:
+          null,
+        acceptanceCriteria:
+          input.acceptanceCriteria ??
+          [],
+      });
+
+    return repository.save(
+      item,
+    );
   }
 
-  async findItemById(id: string): Promise<SprintItemEntity | null> {
-    return this.items.findOne({
-      where: { id },
+  async findItemById(
+    id: string,
+    manager?: EntityManager,
+  ): Promise<SprintItemEntity | null> {
+    const repository =
+      manager?.getRepository(
+        SprintItemEntity,
+      ) ?? this.items;
+
+    return repository.findOne({
+      where: {
+        id,
+      },
     });
   }
 
-  async saveItem(item: SprintItemEntity): Promise<SprintItemEntity> {
-    return this.items.save(item);
+  async saveItem(
+    item: SprintItemEntity,
+    manager?: EntityManager,
+  ): Promise<SprintItemEntity> {
+    const repository =
+      manager?.getRepository(
+        SprintItemEntity,
+      ) ?? this.items;
+
+    return repository.save(
+      item,
+    );
   }
 }

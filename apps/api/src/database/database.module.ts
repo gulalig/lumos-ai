@@ -21,6 +21,7 @@ import { SprintEntity } from '../sprints/entities/sprint.entity.js';
 
 import { DatabaseService } from './database.service.js';
 import { AtlassianConnectionEntity } from '../integrations/jira/entities/atlassian-connection.entity.js';
+import { JiraSyncOutboxEntity } from '../integrations/jira/entities/jira-sync-outbox.entity.js';
 
 @Global()
 @Module({
@@ -47,6 +48,7 @@ import { AtlassianConnectionEntity } from '../integrations/jira/entities/atlassi
           SprintItemEntity,
 
           AtlassianConnectionEntity,
+          JiraSyncOutboxEntity,
           JiraIssueMappingEntity,
           JiraSprintMappingEntity,
 

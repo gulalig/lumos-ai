@@ -14,6 +14,11 @@ import { SprintEntity } from '../sprints/entities/sprint.entity.js';
 
 import { ExecutionObservationLinkEntity } from './entities/execution-observation-link.entity.js';
 import { ExecutionService } from './execution.service.js';
+import { JiraSyncOutboxRepository } from '../integrations/jira/jira-sync-outbox.repository.js';
+
+const jiraSyncOutbox = {
+  enqueue: vi.fn().mockResolvedValue(undefined),
+} as unknown as JiraSyncOutboxRepository;
 
 describe('commitment gap resolution integration', () => {
   let redis: Redis;
@@ -192,7 +197,7 @@ describe('commitment gap resolution integration', () => {
         work(manager),
     } as unknown as DataSource;
 
-    const execution = new ExecutionService(dataSource);
+    const execution = new ExecutionService(dataSource, jiraSyncOutbox);
 
     const interventionService = new InterventionService();
 

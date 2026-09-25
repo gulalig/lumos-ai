@@ -13,6 +13,12 @@ import { JiraSprintMappingEntity } from './entities/jira-sprint-mapping.entity.j
 
 import { JiraOAuthController } from './jira-oauth.controller.js';
 import { AtlassianApiService } from './atlassian-api.service.js';
+import { JiraSyncOutboxEntity } from './entities/jira-sync-outbox.entity.js';
+import { JiraSyncOutboxRepository } from './jira-sync-outbox.repository.js';
+import { JiraIssueMappingsRepository } from './jira-issue-mappings.repository.js';
+import { JiraSyncService } from './jira-sync.service.js';
+import { JiraSyncWorker } from './jira-sync.worker.js';
+import { AtlassianAccessTokenService } from './atlassian-access-token.service.js';
 
 @Module({
   imports: [
@@ -20,6 +26,7 @@ import { AtlassianApiService } from './atlassian-api.service.js';
       AtlassianConnectionEntity,
       JiraIssueMappingEntity,
       JiraSprintMappingEntity,
+      JiraSyncOutboxEntity,
     ]),
   ],
 
@@ -32,6 +39,11 @@ import { AtlassianApiService } from './atlassian-api.service.js';
     AtlassianOAuthStateStore,
     AtlassianOAuthService,
     AtlassianApiService,
+    JiraSyncOutboxRepository,
+    JiraIssueMappingsRepository,
+    JiraSyncService,
+    JiraSyncWorker,
+    AtlassianAccessTokenService,
   ],
 
   exports: [
@@ -41,6 +53,11 @@ import { AtlassianApiService } from './atlassian-api.service.js';
     AtlassianOAuthStateStore,
     AtlassianOAuthService,
     AtlassianApiService,
+    JiraSyncOutboxRepository,
+    JiraIssueMappingsRepository,
+    JiraSyncService,
+    JiraSyncWorker,
+    AtlassianAccessTokenService,
   ],
 })
 export class JiraIntegrationModule {}
