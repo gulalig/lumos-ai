@@ -24,6 +24,44 @@ var (
 	)
 )
 
+const fencedCheckScript = `
+local currentToken = redis.call("GET", KEYS[1])
+
+if not currentToken or currentToken ~= ARGV[1] then
+	return redis.error_reply("LUMOS_FENCED_WRITE_REJECTED")
+end
+
+local currentFence = redis.call("GET", KEYS[2])
+
+if not currentFence or currentFence ~= ARGV[2] then
+	return redis.error_reply("LUMOS_FENCED_WRITE_REJECTED")
+end
+
+return 1
+`
+
+const fencedSetScript = `
+local currentToken = redis.call("GET", KEYS[1])
+
+if not currentToken or currentToken ~= ARGV[1] then
+	return redis.error_reply("LUMOS_FENCED_WRITE_REJECTED")
+end
+
+local currentFence = redis.call("GET", KEYS[2])
+
+if not currentFence or currentFence ~= ARGV[2] then
+	return redis.error_reply("LUMOS_FENCED_WRITE_REJECTED")
+end
+
+redis.call(
+	"SET",
+	KEYS[3],
+	ARGV[3]
+)
+
+return 1
+`
+
 const fencedXAddScript = `
 local currentToken = redis.call("GET", KEYS[1])
 
@@ -90,6 +128,160 @@ end
 
 return 1
 `
+
+func (c *Client) FencedCheck(
+	ctx context.Context,
+	leaseKey string,
+	fenceKey string,
+	token string,
+	fence int64,
+) error {
+	if strings.TrimSpace(leaseKey) == "" {
+		return errors.New(
+			"fenced check lease key is required",
+		)
+	}
+
+	if strings.TrimSpace(fenceKey) == "" {
+		return errors.New(
+			"fenced check fence key is required",
+		)
+	}
+
+	if strings.TrimSpace(token) == "" {
+		return errors.New(
+			"fenced check lease token is required",
+		)
+	}
+
+	if fence <= 0 {
+		return errors.New(
+			"fenced check fence must be positive",
+		)
+	}
+
+	result, err :=
+		c.client.Eval(
+			ctx,
+			fencedCheckScript,
+			[]string{
+				leaseKey,
+				fenceKey,
+			},
+			token,
+			strconv.FormatInt(
+				fence,
+				10,
+			),
+		).Int64()
+
+	if err != nil {
+		if isFencedWriteRejected(
+			err,
+		) {
+			return fmt.Errorf(
+				"fenced ownership check: %w",
+				ErrFencedWriteRejected,
+			)
+		}
+
+		return fmt.Errorf(
+			"fenced ownership check: %w",
+			err,
+		)
+	}
+
+	if result != 1 {
+		return fmt.Errorf(
+			"fenced ownership check returned unexpected result %d",
+			result,
+		)
+	}
+
+	return nil
+}
+
+func (c *Client) FencedSet(
+	ctx context.Context,
+	leaseKey string,
+	fenceKey string,
+	token string,
+	fence int64,
+	key string,
+	value string,
+) error {
+	if strings.TrimSpace(leaseKey) == "" {
+		return errors.New(
+			"fenced set lease key is required",
+		)
+	}
+
+	if strings.TrimSpace(fenceKey) == "" {
+		return errors.New(
+			"fenced set fence key is required",
+		)
+	}
+
+	if strings.TrimSpace(token) == "" {
+		return errors.New(
+			"fenced set lease token is required",
+		)
+	}
+
+	if fence <= 0 {
+		return errors.New(
+			"fenced set fence must be positive",
+		)
+	}
+
+	if strings.TrimSpace(key) == "" {
+		return errors.New(
+			"fenced set key is required",
+		)
+	}
+
+	result, err :=
+		c.client.Eval(
+			ctx,
+			fencedSetScript,
+			[]string{
+				leaseKey,
+				fenceKey,
+				key,
+			},
+			token,
+			strconv.FormatInt(
+				fence,
+				10,
+			),
+			value,
+		).Int64()
+
+	if err != nil {
+		if isFencedWriteRejected(
+			err,
+		) {
+			return fmt.Errorf(
+				"fenced set: %w",
+				ErrFencedWriteRejected,
+			)
+		}
+
+		return fmt.Errorf(
+			"fenced set: %w",
+			err,
+		)
+	}
+
+	if result != 1 {
+		return fmt.Errorf(
+			"fenced set returned unexpected result %d",
+			result,
+		)
+	}
+
+	return nil
+}
 
 func (c *Client) FencedXAdd(
 	ctx context.Context,

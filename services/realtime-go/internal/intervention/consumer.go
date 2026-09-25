@@ -3,12 +3,14 @@ package intervention
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 
+	"lumos/realtime-go/internal/meetinglease"
 	"lumos/realtime-go/internal/redisclient"
 	"lumos/realtime-go/internal/redisstream"
 )
@@ -26,7 +28,7 @@ const (
 type Consumer struct {
 	redis *redisclient.Client
 
-	meetingID string
+	lease meetinglease.Lease
 
 	consumerName string
 
@@ -37,7 +39,7 @@ type Consumer struct {
 
 func NewConsumer(
 	redisClient *redisclient.Client,
-	meetingID string,
+	lease meetinglease.Lease,
 	consumerName string,
 	speaker Speaker,
 	logger *slog.Logger,
@@ -49,7 +51,7 @@ func NewConsumer(
 	return &Consumer{
 		redis: redisClient,
 
-		meetingID: meetingID,
+		lease: lease,
 
 		consumerName: consumerName,
 
@@ -68,9 +70,21 @@ func (c *Consumer) Run(
 		)
 	}
 
-	if c.meetingID == "" {
+	if c.lease.MeetingID == "" {
 		return fmt.Errorf(
 			"intervention consumer meeting ID is required",
+		)
+	}
+
+	if c.lease.Token == "" {
+		return fmt.Errorf(
+			"intervention consumer lease token is required",
+		)
+	}
+
+	if c.lease.Fence <= 0 {
+		return fmt.Errorf(
+			"intervention consumer lease fence must be positive",
 		)
 	}
 
@@ -88,7 +102,7 @@ func (c *Consumer) Run(
 
 	stream :=
 		redisstream.InterventionStreamKey(
-			c.meetingID,
+			c.lease.MeetingID,
 		)
 
 	// "$" is intentional.
@@ -112,8 +126,9 @@ func (c *Consumer) Run(
 
 	// Recover pending work immediately on startup.
 	//
-	// minIdle = 0 allows a new runtime instance to
-	// take over work left pending by an older consumer.
+	// This runtime already owns the meeting lease, so work
+	// left pending by the previous runtime can be claimed
+	// immediately.
 	if err := c.recoverPending(
 		ctx,
 		stream,
@@ -128,9 +143,14 @@ func (c *Consumer) Run(
 
 	c.logger.Info(
 		"intervention consumer started",
-		"meetingId", c.meetingID,
-		"consumer", c.consumerName,
-		"stream", stream,
+		"meetingId",
+		c.lease.MeetingID,
+		"consumer",
+		c.consumerName,
+		"stream",
+		stream,
+		"fence",
+		c.lease.Fence,
 	)
 
 	for {
@@ -138,8 +158,6 @@ func (c *Consumer) Run(
 			return nil
 		}
 
-		// Retry transiently failed pending events without
-		// creating a hot loop.
 		if err := c.recoverPending(
 			ctx,
 			stream,
@@ -174,7 +192,9 @@ func (c *Consumer) Run(
 		}
 
 		for _, result := range streams {
+
 			for _, message := range result.Messages {
+
 				if err := c.process(
 					ctx,
 					stream,
@@ -183,9 +203,12 @@ func (c *Consumer) Run(
 
 					c.logger.Error(
 						"failed to process intervention",
-						"meetingId", c.meetingID,
-						"streamId", message.ID,
-						"error", err,
+						"meetingId",
+						c.lease.MeetingID,
+						"streamId",
+						message.ID,
+						"error",
+						err,
 					)
 
 					// Intentionally do NOT ACK.
@@ -252,7 +275,9 @@ func (c *Consumer) process(
 		)
 	}
 
-	if err := event.Validate(); err != nil {
+	if err :=
+		event.Validate(); err != nil {
+
 		return fmt.Errorf(
 			"validate intervention payload: %w",
 			err,
@@ -267,39 +292,134 @@ func (c *Consumer) process(
 		)
 	}
 
-	if event.MeetingID != c.meetingID {
+	if event.MeetingID !=
+		c.lease.MeetingID {
+
 		return fmt.Errorf(
 			"intervention meeting mismatch: consumer=%q event=%q",
-			c.meetingID,
+			c.lease.MeetingID,
 			event.MeetingID,
 		)
 	}
 
 	c.logger.Info(
 		"intervention received",
-		"meetingId", event.MeetingID,
-		"streamId", message.ID,
-		"eventId", event.ID,
-		"gapId", event.GapID,
-		"sprintItemId", event.SprintItemID,
-		"observationId", event.ObservationID,
-		"reason", event.Reason,
-		"message", event.Message,
+		"meetingId",
+		event.MeetingID,
+		"streamId",
+		message.ID,
+		"eventId",
+		event.ID,
+		"gapId",
+		event.GapID,
+		"sprintItemId",
+		event.SprintItemID,
+		"observationId",
+		event.ObservationID,
+		"reason",
+		event.Reason,
+		"message",
+		event.Message,
 	)
 
-	// -------------------------------------------------------------------------
-	// Side effect
-	// -------------------------------------------------------------------------
+	key :=
+		deliveryKey(
+			event.MeetingID,
+			event.ID,
+		)
+
+	// ---------------------------------------------------------
+	// Durable spoken-side-effect deduplication
+	// ---------------------------------------------------------
 	//
-	// The intervention must only be ACKed after the
-	// speaker successfully handles it.
+	// A Redis marker survives consumer/runtime restart.
 	//
-	// Today LogSpeaker only logs the request.
-	// Later this becomes:
+	// If the intervention was already spoken but remained
+	// pending because acknowledgement did not complete, we
+	// must not speak it again.
+	state, err :=
+		c.redis.Get(
+			ctx,
+			key,
+		)
+
+	switch {
+	case err == nil &&
+		state == deliveryStateDelivered:
+
+		c.logger.Info(
+			"intervention already delivered; skipping speech",
+			"meetingId",
+			event.MeetingID,
+			"streamId",
+			message.ID,
+			"eventId",
+			event.ID,
+		)
+
+		return c.completeDelivery(
+			ctx,
+			stream,
+			message.ID,
+			key,
+			event,
+		)
+
+	case err == nil:
+
+		return fmt.Errorf(
+			"unexpected intervention delivery state %q for event %q",
+			state,
+			event.ID,
+		)
+
+	case errors.Is(
+		err,
+		redis.Nil,
+	):
+		// No durable delivery marker yet.
+		//
+		// Continue to the external audio side effect.
+
+	default:
+		return fmt.Errorf(
+			"read intervention delivery state: %w",
+			err,
+		)
+	}
+
+	// ---------------------------------------------------------
+	// External side effect
+	// ---------------------------------------------------------
 	//
-	// TTS -> PCM -> LiveKit audio publication.
+	// This is deliberately performed before the durable
+	// delivered marker is committed.
 	//
-	// If speaking fails, the event remains pending.
+	// If speaking itself fails, the Redis stream event remains
+	// pending and no delivered marker exists, so recovery can
+	// safely retry it.
+	if err :=
+		c.redis.FencedCheck(
+			ctx,
+
+			meetinglease.LeaseKey(
+				c.lease.MeetingID,
+			),
+
+			meetinglease.FenceKey(
+				c.lease.MeetingID,
+			),
+
+			c.lease.Token,
+			c.lease.Fence,
+		); err != nil {
+
+		return fmt.Errorf(
+			"verify intervention ownership before speaking: %w",
+			err,
+		)
+	}
+
 	if err :=
 		c.speaker.Speak(
 			ctx,
@@ -312,27 +432,107 @@ func (c *Consumer) process(
 		)
 	}
 
-	// -------------------------------------------------------------------------
-	// Durable completion
-	// -------------------------------------------------------------------------
+	// ---------------------------------------------------------
+	// Durable spoken-delivery marker
+	// ---------------------------------------------------------
+	//
+	// Speech has completed successfully.
+	//
+	// Persist the delivered marker BEFORE acknowledgement so
+	// pending recovery can detect the completed external side
+	// effect and avoid speaking the same intervention again.
 
-	if err := c.redis.XAck(
+	if err :=
+		c.redis.FencedSet(
+			ctx,
+
+			meetinglease.LeaseKey(
+				c.lease.MeetingID,
+			),
+
+			meetinglease.FenceKey(
+				c.lease.MeetingID,
+			),
+
+			c.lease.Token,
+			c.lease.Fence,
+
+			key,
+			deliveryStateDelivered,
+		); err != nil {
+
+		return fmt.Errorf(
+			"persist spoken intervention delivery: %w",
+			err,
+		)
+	}
+
+	// ---------------------------------------------------------
+	// Stream acknowledgement
+	// ---------------------------------------------------------
+	//
+	// completeDelivery performs the fenced pending-entry check
+	// and ACK.
+	//
+	// It also writes the same delivered value again as part of
+	// the atomic Redis operation. That write is intentionally
+	// idempotent.
+
+	return c.completeDelivery(
 		ctx,
 		stream,
-		consumerGroup,
 		message.ID,
-	); err != nil {
+		key,
+		event,
+	)
+}
+
+func (c *Consumer) completeDelivery(
+	ctx context.Context,
+	stream string,
+	messageID string,
+	key string,
+	event Event,
+) error {
+	if err :=
+		c.redis.FencedXAckAndSet(
+			ctx,
+
+			meetinglease.LeaseKey(
+				c.lease.MeetingID,
+			),
+
+			meetinglease.FenceKey(
+				c.lease.MeetingID,
+			),
+
+			c.lease.Token,
+			c.lease.Fence,
+
+			stream,
+			consumerGroup,
+			messageID,
+
+			key,
+			deliveryStateDelivered,
+		); err != nil {
+
 		return fmt.Errorf(
-			"ack intervention: %w",
+			"persist intervention delivery and acknowledge: %w",
 			err,
 		)
 	}
 
 	c.logger.Info(
-		"intervention acknowledged",
-		"meetingId", event.MeetingID,
-		"streamId", message.ID,
-		"eventId", event.ID,
+		"intervention delivery completed",
+		"meetingId",
+		event.MeetingID,
+		"streamId",
+		messageID,
+		"eventId",
+		event.ID,
+		"fence",
+		c.lease.Fence,
 	)
 
 	return nil
@@ -373,11 +573,15 @@ func (c *Consumer) recoverPending(
 		}
 
 		for _, message := range messages {
+
 			c.logger.Info(
 				"intervention consumer recovered pending event",
-				"meetingId", c.meetingID,
-				"streamId", message.ID,
-				"minIdle", minIdle,
+				"meetingId",
+				c.lease.MeetingID,
+				"streamId",
+				message.ID,
+				"minIdle",
+				minIdle,
 			)
 
 			if err := c.process(
@@ -388,9 +592,12 @@ func (c *Consumer) recoverPending(
 
 				c.logger.Error(
 					"failed to process recovered intervention",
-					"meetingId", c.meetingID,
-					"streamId", message.ID,
-					"error", err,
+					"meetingId",
+					c.lease.MeetingID,
+					"streamId",
+					message.ID,
+					"error",
+					err,
 				)
 
 				continue

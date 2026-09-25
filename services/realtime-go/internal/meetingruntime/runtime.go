@@ -506,7 +506,7 @@ func (r *Runtime) Run(
 	interventionConsumer :=
 		intervention.NewConsumer(
 			r.redisClient,
-			meetingID,
+			lease,
 			"realtime-intervention-"+uuid.NewString(),
 			interventionSpeaker,
 			logger,
