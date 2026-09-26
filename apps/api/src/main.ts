@@ -8,6 +8,7 @@ import {
 
 import { AppModule } from './app.module.js';
 import type { Env } from './config/env.js';
+import cookie from '@fastify/cookie';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -24,6 +25,8 @@ async function bootstrap() {
   const webOrigin = config.get('WEB_ORIGIN', {
     infer: true,
   });
+
+  await app.register(cookie);
 
   app.enableCors({
     origin: webOrigin,

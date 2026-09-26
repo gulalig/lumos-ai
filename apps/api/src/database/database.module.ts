@@ -23,6 +23,9 @@ import { DatabaseService } from './database.service.js';
 import { AtlassianConnectionEntity } from '../integrations/jira/entities/atlassian-connection.entity.js';
 import { JiraSyncOutboxEntity } from '../integrations/jira/entities/jira-sync-outbox.entity.js';
 
+import { AuthOtpChallengeEntity } from '../auth/entities/auth-otp-challenge.entity.js';
+import { AuthRefreshSessionEntity } from '../auth/entities/auth-refresh-session.entity.js';
+
 @Global()
 @Module({
   imports: [
@@ -53,6 +56,9 @@ import { JiraSyncOutboxEntity } from '../integrations/jira/entities/jira-sync-ou
           JiraSprintMappingEntity,
 
           ExecutionObservationLinkEntity,
+
+          AuthOtpChallengeEntity,
+          AuthRefreshSessionEntity,
         ],
 
         synchronize: false,

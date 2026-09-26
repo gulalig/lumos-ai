@@ -6,12 +6,12 @@ import { WorkspaceMemberEntity } from './entities/workspace-member.entity.js';
 
 @Injectable()
 export class WorkspaceMembersRepository {
-  constructor(
+  public constructor(
     @InjectRepository(WorkspaceMemberEntity)
     private readonly repository: Repository<WorkspaceMemberEntity>,
   ) {}
 
-  async findById(id: string): Promise<WorkspaceMemberEntity | null> {
+  public async findById(id: string): Promise<WorkspaceMemberEntity | null> {
     return this.repository.findOne({
       where: {
         id,
@@ -20,6 +20,25 @@ export class WorkspaceMembersRepository {
       relations: {
         user: true,
         workspace: true,
+      },
+    });
+  }
+
+  public async findFirstByUserId(
+    userId: string,
+  ): Promise<WorkspaceMemberEntity | null> {
+    return this.repository.findOne({
+      where: {
+        userId,
+      },
+
+      relations: {
+        user: true,
+        workspace: true,
+      },
+
+      order: {
+        createdAt: 'ASC',
       },
     });
   }

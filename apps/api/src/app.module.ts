@@ -12,6 +12,7 @@ import { IdentityModule } from './identity/identity.module.js';
 import { SprintsModule } from './sprints/sprints.module.js';
 import { JiraIntegrationModule } from './integrations/jira/jira-integration.module.js';
 import { ExecutionModule } from './execution/execution.module.js';
+import { AuthModule } from './auth/auth.module.js';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { ExecutionModule } from './execution/execution.module.js';
     SprintsModule,
     JiraIntegrationModule,
     ExecutionModule,
+    AuthModule,
   ],
 })
 export class AppModule {}
