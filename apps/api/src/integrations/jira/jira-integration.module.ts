@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { AuthModule } from '../../auth/auth.module.js';
+
 import { AtlassianConnectionsRepository } from './atlassian-connections.repository.js';
 import { AtlassianConnectionsService } from './atlassian-connections.service.js';
 import { AtlassianOAuthStateStore } from './atlassian-oauth-state.store.js';
@@ -22,6 +24,8 @@ import { AtlassianAccessTokenService } from './atlassian-access-token.service.js
 
 @Module({
   imports: [
+    AuthModule,
+
     TypeOrmModule.forFeature([
       AtlassianConnectionEntity,
       JiraIssueMappingEntity,

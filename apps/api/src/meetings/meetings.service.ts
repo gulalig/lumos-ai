@@ -47,6 +47,22 @@ export class MeetingsService {
     return meeting;
   }
 
+  async getByIdForWorkspace(
+    meetingId: string,
+    workspaceId: string,
+  ): Promise<Meeting> {
+    const meeting = await this.meetingsRepository.findByIdForWorkspace(
+      meetingId,
+      workspaceId,
+    );
+
+    if (!meeting) {
+      throw new NotFoundException(`Meeting ${meetingId} was not found`);
+    }
+
+    return meeting;
+  }
+
   async bindWorkspace(
     meetingId: string,
     workspaceId: string,

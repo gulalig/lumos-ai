@@ -56,6 +56,7 @@ import { RolesGuard } from './roles.guard.js';
 
   exports: [
     AuthService,
+    PassportModule,
     OtpService,
     PasswordService,
     AccessTokenService,

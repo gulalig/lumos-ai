@@ -33,232 +33,196 @@ export interface UpdateSprintItemInput {
 @Injectable()
 export class SprintsService {
   constructor(
-    private readonly repository:
-    SprintsRepository,
+    private readonly repository: SprintsRepository,
 
-    private readonly dataSource:
-    DataSource,
+    private readonly dataSource: DataSource,
 
-    private readonly jiraSyncOutbox:
-    JiraSyncOutboxRepository,
+    private readonly jiraSyncOutbox: JiraSyncOutboxRepository,
   ) {}
 
-  async createSprint(
-    input: CreateSprintInput,
-  ): Promise<SprintEntity> {
-    const name =
-      input.name.trim();
+  async createSprint(input: CreateSprintInput): Promise<SprintEntity> {
+    const name = input.name.trim();
 
     if (!name) {
-      throw new BadRequestException(
-        'Sprint name is required',
-      );
+      throw new BadRequestException('Sprint name is required');
     }
 
-    if (
-      input.startsAt &&
-      input.endsAt &&
-      input.endsAt <=
-      input.startsAt
-    ) {
-      throw new BadRequestException(
-        'Sprint end must be after sprint start',
-      );
+    if (input.startsAt && input.endsAt && input.endsAt <= input.startsAt) {
+      throw new BadRequestException('Sprint end must be after sprint start');
     }
 
-    return this.repository
-      .createSprint({
-        ...input,
-        name,
-      });
+    return this.repository.createSprint({
+      ...input,
+      name,
+    });
   }
 
   async createItem(
+    workspaceId: string,
     input: CreateSprintItemInput,
   ): Promise<SprintItemEntity> {
-    const title =
-      input.title.trim();
+    const title = input.title.trim();
 
     if (!title) {
-      throw new BadRequestException(
-        'Sprint item title is required',
-      );
+      throw new BadRequestException('Sprint item title is required');
     }
 
-    return this.dataSource.transaction(
-      async (
+    return this.dataSource.transaction(async (manager) => {
+      const sprint = await this.repository.findSprintByIdForWorkspace(
+        input.sprintId,
+        workspaceId,
         manager,
-      ) => {
-        const sprint =
-          await this.repository
-            .findSprintById(
-              input.sprintId,
-              manager,
-            );
+      );
 
-        if (!sprint) {
-          throw new NotFoundException(
-            'Sprint not found',
-          );
-        }
+      if (!sprint) {
+        throw new NotFoundException('Sprint not found');
+      }
 
-        const item =
-          await this.repository
-            .createItem(
-              {
-                ...input,
-                title,
-              },
-              manager,
-            );
+      const item = await this.repository.createItem(
+        {
+          ...input,
+          title,
+        },
+        manager,
+      );
 
-        await this.jiraSyncOutbox
-          .enqueue(
-            sprint.workspaceId,
-            item.id,
-            manager,
-          );
+      await this.jiraSyncOutbox.enqueue(sprint.workspaceId, item.id, manager);
 
-        return item;
-      },
-    );
+      return item;
+    });
   }
 
   async updateItem(
+    workspaceId: string,
     itemId: string,
     input: UpdateSprintItemInput,
   ): Promise<SprintItemEntity> {
-    return this.dataSource.transaction(
-      async (
+    return this.dataSource.transaction(async (manager) => {
+      const item = await this.repository.findItemByIdForWorkspace(
+        itemId,
+        workspaceId,
         manager,
-      ) => {
-        const item =
-          await this.repository
-            .findItemById(
-              itemId,
-              manager,
-            );
+      );
 
-        if (!item) {
-          throw new NotFoundException(
-            'Sprint item not found',
-          );
+      if (!item) {
+        throw new NotFoundException('Sprint item not found');
+      }
+
+      const sprint = await this.repository.findSprintByIdForWorkspace(
+        item.sprintId,
+        workspaceId,
+        manager,
+      );
+
+      if (!sprint) {
+        throw new NotFoundException('Sprint not found');
+      }
+
+      if (input.title !== undefined) {
+        const title = input.title.trim();
+
+        if (!title) {
+          throw new BadRequestException('Sprint item title is required');
         }
 
-        const sprint =
-          await this.repository
-            .findSprintById(
-              item.sprintId,
-              manager,
-            );
+        item.title = title;
+      }
 
-        if (!sprint) {
-          throw new NotFoundException(
-            'Sprint not found',
-          );
+      if (input.description !== undefined) {
+        item.description = input.description;
+      }
+
+      if (input.ownerWorkspaceMemberId !== undefined) {
+        item.ownerWorkspaceMemberId = input.ownerWorkspaceMemberId;
+      }
+
+      if (input.dueAt !== undefined) {
+        item.dueAt = input.dueAt;
+      }
+
+      if (input.acceptanceCriteria !== undefined) {
+        item.acceptanceCriteria = input.acceptanceCriteria;
+      }
+
+      if (input.blockerText !== undefined) {
+        item.blockerText = input.blockerText;
+      }
+
+      if (input.status !== undefined) {
+        item.status = input.status;
+
+        if (input.status !== 'blocked' && input.blockerText === undefined) {
+          item.blockerText = null;
         }
+      }
 
-        if (
-          input.title !==
-          undefined
-        ) {
-          const title =
-            input.title.trim();
+      if (item.status === 'blocked' && !item.blockerText?.trim()) {
+        throw new BadRequestException(
+          'Blocked sprint item requires blocker text',
+        );
+      }
 
-          if (!title) {
-            throw new BadRequestException(
-              'Sprint item title is required',
-            );
-          }
+      const savedItem = await this.repository.saveItem(item, manager);
 
-          item.title =
-            title;
-        }
+      await this.jiraSyncOutbox.enqueue(
+        sprint.workspaceId,
+        savedItem.id,
+        manager,
+      );
 
-        if (
-          input.description !==
-          undefined
-        ) {
-          item.description =
-            input.description;
-        }
+      return savedItem;
+    });
+  }
 
-        if (
-          input.ownerWorkspaceMemberId !==
-          undefined
-        ) {
-          item.ownerWorkspaceMemberId =
-            input.ownerWorkspaceMemberId;
-        }
+  async getActiveSprint(workspaceId: string): Promise<SprintEntity | null> {
+    return this.repository.findActiveByWorkspace(workspaceId);
+  }
 
-        if (
-          input.dueAt !==
-          undefined
-        ) {
-          item.dueAt =
-            input.dueAt;
-        }
-
-        if (
-          input.acceptanceCriteria !==
-          undefined
-        ) {
-          item.acceptanceCriteria =
-            input.acceptanceCriteria;
-        }
-
-        if (
-          input.blockerText !==
-          undefined
-        ) {
-          item.blockerText =
-            input.blockerText;
-        }
-
-        if (
-          input.status !==
-          undefined
-        ) {
-          item.status =
-            input.status;
-
-          if (
-            input.status !==
-            'blocked' &&
-            input.blockerText ===
-            undefined
-          ) {
-            item.blockerText =
-              null;
-          }
-        }
-
-        if (
-          item.status ===
-          'blocked' &&
-          !item.blockerText?.trim()
-        ) {
-          throw new BadRequestException(
-            'Blocked sprint item requires blocker text',
-          );
-        }
-
-        const savedItem =
-          await this.repository
-            .saveItem(
-              item,
-              manager,
-            );
-
-        await this.jiraSyncOutbox
-          .enqueue(
-            sprint.workspaceId,
-            savedItem.id,
-            manager,
-          );
-
-        return savedItem;
-      },
+  async getSprint(
+    workspaceId: string,
+    sprintId: string,
+  ): Promise<SprintEntity> {
+    const sprint = await this.repository.findSprintByIdForWorkspace(
+      sprintId,
+      workspaceId,
     );
+
+    if (!sprint) {
+      throw new NotFoundException('Sprint not found');
+    }
+
+    return sprint;
+  }
+
+  async getSprintItems(
+    workspaceId: string,
+    sprintId: string,
+  ): Promise<SprintItemEntity[]> {
+    const sprint = await this.repository.findSprintByIdForWorkspace(
+      sprintId,
+      workspaceId,
+    );
+
+    if (!sprint) {
+      throw new NotFoundException('Sprint not found');
+    }
+
+    return this.repository.findItemsBySprintForWorkspace(sprintId, workspaceId);
+  }
+
+  async getItem(
+    workspaceId: string,
+    itemId: string,
+  ): Promise<SprintItemEntity> {
+    const item = await this.repository.findItemByIdForWorkspace(
+      itemId,
+      workspaceId,
+    );
+
+    if (!item) {
+      throw new NotFoundException('Sprint item not found');
+    }
+
+    return item;
   }
 }

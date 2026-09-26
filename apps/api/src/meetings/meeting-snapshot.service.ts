@@ -23,86 +23,53 @@ import type {
 
 @Injectable()
 export class MeetingSnapshotService {
-  private readonly logger =
-    new Logger(
-      MeetingSnapshotService.name,
-    );
+  private readonly logger = new Logger(MeetingSnapshotService.name);
 
   constructor(
-    private readonly redis:
-    RedisService,
+    private readonly redis: RedisService,
 
-    private readonly meetingsService:
-    MeetingsService,
+    private readonly meetingsService: MeetingsService,
   ) {}
 
   async getSnapshot(
     meetingId: string,
+    workspaceId: string,
   ): Promise<MeetingSnapshot> {
-    const meeting =
-      await this.meetingsService
-        .getById(
-          meetingId,
-        );
+    const meeting = await this.meetingsService.getByIdForWorkspace(
+      meetingId,
+      workspaceId,
+    );
 
-    const streamKey =
-      semanticStreamKey(
-        meetingId,
-      );
+    const streamKey = semanticStreamKey(meetingId);
 
-    const entries =
-      await this.redis.client.xrange(
-        streamKey,
-        '-',
-        '+',
-      );
+    const entries = await this.redis.client.xrange(streamKey, '-', '+');
 
-    const applied =
-      new Set<string>();
+    const applied = new Set<string>();
 
-    const snapshot:
-      MeetingSnapshot = {
+    const snapshot: MeetingSnapshot = {
       meetingId,
 
-      status:
-      meeting.status,
+      status: meeting.status,
 
-      version:
-        0,
+      version: 0,
 
-      decisions:
-        [],
+      decisions: [],
 
-      commitments:
-        [],
+      commitments: [],
 
-      proposals:
-        [],
+      proposals: [],
 
-      questions:
-        [],
+      questions: [],
     };
 
-    for (
-      const entry of entries
-      ) {
-      const [
-        streamId,
-        fields,
-      ] = entry;
+    for (const entry of entries) {
+      const [streamId, fields] = entry;
 
-      const values =
-        redisFieldsToRecord(
-          fields,
-        );
+      const values = redisFieldsToRecord(fields);
 
-      const eventType =
-        values.event_type;
+      const eventType = values.event_type;
 
-      if (
-        eventType !==
-        SEMANTIC_EVENT_TYPE
-      ) {
+      if (eventType !== SEMANTIC_EVENT_TYPE) {
         this.logger.warn(
           [
             'Ignoring unsupported semantic event',
@@ -115,8 +82,7 @@ export class MeetingSnapshotService {
         continue;
       }
 
-      const payload =
-        values.payload;
+      const payload = values.payload;
 
       if (!payload) {
         throw new InternalServerErrorException(
@@ -124,102 +90,57 @@ export class MeetingSnapshotService {
         );
       }
 
-      const observation =
-        this.parseObservation(
-          meetingId,
-          streamId,
-          payload,
-        );
+      const observation = this.parseObservation(meetingId, streamId, payload);
 
-      if (
-        observation.kind ===
-        'unknown'
-      ) {
+      if (observation.kind === 'unknown') {
         continue;
       }
 
-      if (
-        applied.has(
-          observation.id,
-        )
-      ) {
+      if (applied.has(observation.id)) {
         continue;
       }
 
-      applied.add(
-        observation.id,
-      );
+      applied.add(observation.id);
 
-      if (
-        observation
-          .supersedesObservationId
-      ) {
-        this.removeObservation(
-          snapshot,
-          observation
-            .supersedesObservationId,
-        );
+      if (observation.supersedesObservationId) {
+        this.removeObservation(snapshot, observation.supersedesObservationId);
       }
 
-      const item:
-        MeetingSnapshotItem = {
-        id:
-        observation.id,
+      const item: MeetingSnapshotItem = {
+        id: observation.id,
 
-        kind:
-        observation.kind,
+        kind: observation.kind,
 
-        evidenceEventId:
-        observation
-          .evidenceEventId,
+        evidenceEventId: observation.evidenceEventId,
 
-        evidenceText:
-        observation
-          .evidenceText,
+        evidenceText: observation.evidenceText,
 
-        summary:
-        observation.summary,
+        summary: observation.summary,
 
-        owner:
-          observation.owner ??
-          '',
+        owner: observation.owner ?? '',
 
-        dueText:
-          observation.dueText ??
-          '',
+        dueText: observation.dueText ?? '',
 
-        explicit:
-        observation.explicit,
+        explicit: observation.explicit,
 
-        confidence:
-        observation.confidence,
+        confidence: observation.confidence,
       };
 
-      switch (
-        observation.kind
-        ) {
+      switch (observation.kind) {
         case 'decision':
-          snapshot.decisions.push(
-            item,
-          );
+          snapshot.decisions.push(item);
           break;
 
         case 'commitment':
-          snapshot.commitments.push(
-            item,
-          );
+          snapshot.commitments.push(item);
           break;
 
         case 'proposal':
-          snapshot.proposals.push(
-            item,
-          );
+          snapshot.proposals.push(item);
           break;
 
         case 'question':
-          snapshot.questions.push(
-            item,
-          );
+          snapshot.questions.push(item);
           break;
       }
 
@@ -235,15 +156,9 @@ export class MeetingSnapshotService {
     payload: string,
   ): SemanticObservation {
     try {
-      const parsed =
-        JSON.parse(
-          payload,
-        );
+      const parsed = JSON.parse(payload);
 
-      return semanticObservationSchema
-        .parse(
-          parsed,
-        );
+      return semanticObservationSchema.parse(parsed);
     } catch (error) {
       this.logger.error(
         [
@@ -251,9 +166,7 @@ export class MeetingSnapshotService {
           `meetingId=${meetingId}`,
           `streamId=${streamId}`,
         ].join(' '),
-        error instanceof Error
-          ? error.stack
-          : undefined,
+        error instanceof Error ? error.stack : undefined,
       );
 
       throw new InternalServerErrorException(
@@ -266,32 +179,20 @@ export class MeetingSnapshotService {
     snapshot: MeetingSnapshot,
     observationId: string,
   ): void {
-    snapshot.decisions =
-      snapshot.decisions.filter(
-        (item) =>
-          item.id !==
-          observationId,
-      );
+    snapshot.decisions = snapshot.decisions.filter(
+      (item) => item.id !== observationId,
+    );
 
-    snapshot.commitments =
-      snapshot.commitments.filter(
-        (item) =>
-          item.id !==
-          observationId,
-      );
+    snapshot.commitments = snapshot.commitments.filter(
+      (item) => item.id !== observationId,
+    );
 
-    snapshot.proposals =
-      snapshot.proposals.filter(
-        (item) =>
-          item.id !==
-          observationId,
-      );
+    snapshot.proposals = snapshot.proposals.filter(
+      (item) => item.id !== observationId,
+    );
 
-    snapshot.questions =
-      snapshot.questions.filter(
-        (item) =>
-          item.id !==
-          observationId,
-      );
+    snapshot.questions = snapshot.questions.filter(
+      (item) => item.id !== observationId,
+    );
   }
 }

@@ -16,8 +16,7 @@ export interface CreateExecutionObservationLinkInput {
 export class ExecutionRepository {
   constructor(
     @InjectRepository(ExecutionObservationLinkEntity)
-    private readonly links:
-    Repository<ExecutionObservationLinkEntity>,
+    private readonly links: Repository<ExecutionObservationLinkEntity>,
   ) {}
 
   async findByObservationId(
@@ -30,26 +29,38 @@ export class ExecutionRepository {
     });
   }
 
+  async findBySprintItemForWorkspace(
+    sprintItemId: string,
+    workspaceId: string,
+  ): Promise<ExecutionObservationLinkEntity[]> {
+    return this.links
+      .createQueryBuilder('link')
+      .innerJoin('link.sprintItem', 'item')
+      .innerJoin('item.sprint', 'sprint')
+      .where('link.sprintItemId = :sprintItemId', {
+        sprintItemId,
+      })
+      .andWhere('sprint.workspaceId = :workspaceId', {
+        workspaceId,
+      })
+      .orderBy('link.appliedAt', 'ASC')
+      .getMany();
+  }
+
   async createLink(
     input: CreateExecutionObservationLinkInput,
   ): Promise<ExecutionObservationLinkEntity> {
-    const link =
-      this.links.create({
-        observationId:
-        input.observationId,
+    const link = this.links.create({
+      observationId: input.observationId,
 
-        meetingId:
-        input.meetingId,
+      meetingId: input.meetingId,
 
-        sprintItemId:
-        input.sprintItemId,
+      sprintItemId: input.sprintItemId,
 
-        kind:
-        input.kind,
+      kind: input.kind,
 
-        evidenceEventId:
-        input.evidenceEventId,
-      });
+      evidenceEventId: input.evidenceEventId,
+    });
 
     return this.links.save(link);
   }

@@ -4,12 +4,18 @@ import {
   Controller,
   Get,
   HttpStatus,
-  ParseUUIDPipe,
   Post,
   Query,
   Redirect,
+  UseGuards,
 } from '@nestjs/common';
 import { z } from 'zod';
+
+import type { AuthPrincipal } from '../../auth/auth-principal.js';
+import { CurrentUser } from '../../auth/current-user.decorator.js';
+import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
+import { Roles } from '../../auth/roles.decorator.js';
+import { RolesGuard } from '../../auth/roles.guard.js';
 
 import { AtlassianApiService } from './atlassian-api.service.js';
 import { AtlassianConnectionsService } from './atlassian-connections.service.js';
@@ -45,18 +51,17 @@ export class JiraOAuthController {
   ) {}
 
   @Get('oauth/authorize')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
   @Redirect(undefined, HttpStatus.FOUND)
   public async authorize(
-    @Query(
-      'workspaceId',
-      new ParseUUIDPipe({
-        version: '4',
-      }),
-    )
-    workspaceId: string,
+    @CurrentUser()
+    principal: AuthPrincipal,
   ): Promise<{
     url: string;
   }> {
+    const workspaceId = this.requireWorkspaceId(principal);
+
     const state = await this.oauthState.create(workspaceId);
 
     return {
@@ -65,15 +70,14 @@ export class JiraOAuthController {
   }
 
   @Post('oauth/refresh')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
   public async refresh(
-    @Query(
-      'workspaceId',
-      new ParseUUIDPipe({
-        version: '4',
-      }),
-    )
-    workspaceId: string,
+    @CurrentUser()
+    principal: AuthPrincipal,
   ) {
+    const workspaceId = this.requireWorkspaceId(principal);
+
     const refreshToken = await this.connections.getRefreshToken(workspaceId);
 
     if (!refreshToken) {
@@ -204,15 +208,14 @@ export class JiraOAuthController {
   }
 
   @Get('projects')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
   public async getProjects(
-    @Query(
-      'workspaceId',
-      new ParseUUIDPipe({
-        version: '4',
-      }),
-    )
-    workspaceId: string,
+    @CurrentUser()
+    principal: AuthPrincipal,
   ) {
+    const workspaceId = this.requireWorkspaceId(principal);
+
     const connection = await this.connections.requireByWorkspaceId(workspaceId);
 
     if (!connection.cloudId) {
@@ -225,18 +228,17 @@ export class JiraOAuthController {
   }
 
   @Post('project')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
   public async selectProject(
-    @Query(
-      'workspaceId',
-      new ParseUUIDPipe({
-        version: '4',
-      }),
-    )
-    workspaceId: string,
+    @CurrentUser()
+    principal: AuthPrincipal,
 
     @Body()
     body: unknown,
   ) {
+    const workspaceId = this.requireWorkspaceId(principal);
+
     const parsed = selectProjectSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -298,15 +300,13 @@ export class JiraOAuthController {
   }
 
   @Get('connection')
+  @UseGuards(JwtAuthGuard)
   public async verifyConnection(
-    @Query(
-      'workspaceId',
-      new ParseUUIDPipe({
-        version: '4',
-      }),
-    )
-    workspaceId: string,
+    @CurrentUser()
+    principal: AuthPrincipal,
   ) {
+    const workspaceId = this.requireWorkspaceId(principal);
+
     const connection = await this.connections.requireByWorkspaceId(workspaceId);
 
     if (
@@ -355,5 +355,13 @@ export class JiraOAuthController {
         name: project.name,
       },
     };
+  }
+
+  private requireWorkspaceId(principal: AuthPrincipal): string {
+    if (!principal.workspaceId) {
+      throw new BadRequestException('Workspace membership is required');
+    }
+
+    return principal.workspaceId;
   }
 }

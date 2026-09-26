@@ -39,12 +39,22 @@ export class MeetingsRepository {
     });
   }
 
+  async findByIdForWorkspace(
+    id: string,
+    workspaceId: string,
+  ): Promise<Meeting | null> {
+    return this.repository.findOne({
+      where: {
+        id,
+        workspaceId,
+      },
+    });
+  }
+
   async findWorkspaceBound(): Promise<MeetingEntity[]> {
     return this.repository.find({
       where: {
-        workspaceId: Not(
-          IsNull(),
-        ),
+        workspaceId: Not(IsNull()),
       },
       order: {
         createdAt: 'ASC',
