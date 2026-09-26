@@ -13,6 +13,7 @@ import { SprintsModule } from './sprints/sprints.module.js';
 import { JiraIntegrationModule } from './integrations/jira/jira-integration.module.js';
 import { ExecutionModule } from './execution/execution.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { OnboardingModule } from './onboarding/onboarding.module.js';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AuthModule } from './auth/auth.module.js';
     JiraIntegrationModule,
     ExecutionModule,
     AuthModule,
+    OnboardingModule,
   ],
 })
 export class AppModule {}

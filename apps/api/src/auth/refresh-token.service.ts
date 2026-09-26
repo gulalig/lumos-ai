@@ -219,6 +219,89 @@ export class RefreshTokenService {
     await this.sessions.revokeAllForUser(userId, new Date(), reason, manager);
   }
 
+  public async transitionToWorkspace(
+    input: {
+      refreshToken: string;
+      userId: string;
+      workspaceMemberId: string;
+    },
+    manager: EntityManager,
+  ): Promise<CreatedRefreshToken> {
+    if (!input.refreshToken) {
+      throw new UnauthorizedException('Refresh token is required');
+    }
+
+    const tokenHash = this.hashToken(input.refreshToken);
+
+    const session = await this.sessions.findByTokenHashForUpdate(
+      tokenHash,
+      manager,
+    );
+
+    if (!session || session.userId !== input.userId) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const now = new Date();
+
+    if (session.revokedAt) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (session.expiresAt.getTime() <= now.getTime()) {
+      throw new UnauthorizedException('Refresh token expired');
+    }
+
+    if (session.workspaceMemberId) {
+      throw new UnauthorizedException(
+        'Refresh session is already bound to a workspace',
+      );
+    }
+
+    session.revokedAt = now;
+
+    session.revokeReason = 'workspace_onboarding';
+
+    session.lastUsedAt = now;
+
+    await this.sessions.save(session, manager);
+
+    await this.sessions.revokeFamily(
+      session.familyId,
+      now,
+      'workspace_onboarding',
+      manager,
+    );
+
+    const refreshToken = this.generateToken();
+
+    const expiresAt = this.calculateExpiry(now);
+
+    await this.sessions.create(
+      {
+        id: randomUUID(),
+
+        familyId: randomUUID(),
+
+        userId: session.userId,
+
+        workspaceMemberId: input.workspaceMemberId,
+
+        tokenHash: this.hashToken(refreshToken),
+
+        expiresAt,
+
+        rotatedFromId: session.id,
+      },
+      manager,
+    );
+
+    return {
+      refreshToken,
+      expiresAt,
+    };
+  }
+
   private generateToken(): string {
     return randomBytes(48).toString('base64url');
   }

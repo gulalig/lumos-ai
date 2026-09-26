@@ -1,6 +1,6 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Env } from '../config/env.js';
@@ -12,7 +12,7 @@ import { RefreshTokenService } from './refresh-token.service.js';
 function createFixture() {
   const manager = {
     marker: 'manager',
-  };
+  } as unknown as EntityManager;
 
   const dataSource = {
     transaction: vi.fn(
@@ -208,5 +208,210 @@ describe('RefreshTokenService', () => {
       session,
       fixture.manager,
     );
+  });
+
+  it('transitions a pre-onboarding refresh session into a new family with a workspace membership', async () => {
+    const fixture = createFixture();
+
+    const session = Object.assign(new AuthRefreshSessionEntity(), {
+      id: 'session-pre-onboarding',
+
+      familyId: 'family-1',
+
+      userId: 'user-1',
+
+      workspaceMemberId: null,
+
+      expiresAt: new Date(Date.now() + 60_000),
+
+      revokedAt: null,
+
+      revokeReason: null,
+
+      lastUsedAt: null,
+    });
+
+    vi.mocked(fixture.sessions.findByTokenHashForUpdate).mockResolvedValue(
+      session,
+    );
+
+    const result = await fixture.service.transitionToWorkspace(
+      {
+        refreshToken: 'pre-onboarding-refresh-token',
+
+        userId: 'user-1',
+
+        workspaceMemberId: 'member-1',
+      },
+      fixture.manager,
+    );
+
+    expect(session.revokedAt).toBeInstanceOf(Date);
+
+    expect(session.revokeReason).toBe('workspace_onboarding');
+
+    expect(fixture.sessions.save).toHaveBeenCalledWith(
+      session,
+      fixture.manager,
+    );
+
+    expect(fixture.sessions.revokeFamily).toHaveBeenCalledWith(
+      'family-1',
+      expect.any(Date),
+      'workspace_onboarding',
+      fixture.manager,
+    );
+
+    expect(fixture.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        familyId: expect.any(String),
+
+        userId: 'user-1',
+
+        workspaceMemberId: 'member-1',
+
+        rotatedFromId: 'session-pre-onboarding',
+
+        tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+      fixture.manager,
+    );
+
+    const createdInput = vi.mocked(fixture.sessions.create).mock.calls[0][0];
+
+    expect(createdInput.familyId).not.toBe('family-1');
+
+    expect(result.refreshToken).not.toBe('pre-onboarding-refresh-token');
+
+    expect(createdInput.tokenHash).not.toBe(result.refreshToken);
+  });
+
+  it('rejects workspace transition when the refresh token belongs to another user', async () => {
+    const fixture = createFixture();
+
+    const session = Object.assign(new AuthRefreshSessionEntity(), {
+      id: 'session-1',
+
+      familyId: 'family-1',
+
+      userId: 'other-user',
+
+      workspaceMemberId: null,
+
+      expiresAt: new Date(Date.now() + 60_000),
+
+      revokedAt: null,
+
+      revokeReason: null,
+
+      lastUsedAt: null,
+    });
+
+    vi.mocked(fixture.sessions.findByTokenHashForUpdate).mockResolvedValue(
+      session,
+    );
+
+    await expect(
+      fixture.service.transitionToWorkspace(
+        {
+          refreshToken: 'refresh-token',
+
+          userId: 'user-1',
+
+          workspaceMemberId: 'member-1',
+        },
+        fixture.manager,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(fixture.sessions.save).not.toHaveBeenCalled();
+
+    expect(fixture.sessions.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a revoked pre-onboarding refresh token without creating a workspace session', async () => {
+    const fixture = createFixture();
+
+    const session = Object.assign(new AuthRefreshSessionEntity(), {
+      id: 'session-old',
+
+      familyId: 'family-1',
+
+      userId: 'user-1',
+
+      workspaceMemberId: null,
+
+      expiresAt: new Date(Date.now() + 60_000),
+
+      revokedAt: new Date(),
+
+      revokeReason: 'workspace_onboarding',
+
+      lastUsedAt: new Date(),
+    });
+
+    vi.mocked(fixture.sessions.findByTokenHashForUpdate).mockResolvedValue(
+      session,
+    );
+
+    await expect(
+      fixture.service.transitionToWorkspace(
+        {
+          refreshToken: 'reused-refresh-token',
+
+          userId: 'user-1',
+
+          workspaceMemberId: 'member-1',
+        },
+        fixture.manager,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(fixture.sessions.create).not.toHaveBeenCalled();
+
+    expect(fixture.sessions.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects workspace transition when the refresh session is already workspace-bound', async () => {
+    const fixture = createFixture();
+
+    const session = Object.assign(new AuthRefreshSessionEntity(), {
+      id: 'session-bound',
+
+      familyId: 'family-1',
+
+      userId: 'user-1',
+
+      workspaceMemberId: 'existing-member',
+
+      expiresAt: new Date(Date.now() + 60_000),
+
+      revokedAt: null,
+
+      revokeReason: null,
+
+      lastUsedAt: null,
+    });
+
+    vi.mocked(fixture.sessions.findByTokenHashForUpdate).mockResolvedValue(
+      session,
+    );
+
+    await expect(
+      fixture.service.transitionToWorkspace(
+        {
+          refreshToken: 'workspace-refresh-token',
+
+          userId: 'user-1',
+
+          workspaceMemberId: 'member-2',
+        },
+        fixture.manager,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(fixture.sessions.save).not.toHaveBeenCalled();
+
+    expect(fixture.sessions.create).not.toHaveBeenCalled();
   });
 });

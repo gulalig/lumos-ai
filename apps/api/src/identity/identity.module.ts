@@ -8,6 +8,7 @@ import { WorkspaceEntity } from './entities/workspace.entity.js';
 import { IdentityService } from './identity.service.js';
 import { UsersRepository } from './users.repository.js';
 import { WorkspaceMembersRepository } from './workspace-members.repository.js';
+import { WorkspacesRepository } from './workspaces.repository.js';
 
 @Module({
   imports: [
@@ -18,8 +19,18 @@ import { WorkspaceMembersRepository } from './workspace-members.repository.js';
     ]),
   ],
 
-  providers: [UsersRepository, WorkspaceMembersRepository, IdentityService],
+  providers: [
+    UsersRepository,
+    WorkspacesRepository,
+    WorkspaceMembersRepository,
+    IdentityService,
+  ],
 
-  exports: [UsersRepository, WorkspaceMembersRepository, IdentityService],
+  exports: [
+    UsersRepository,
+    WorkspacesRepository,
+    WorkspaceMembersRepository,
+    IdentityService,
+  ],
 })
 export class IdentityModule {}

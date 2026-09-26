@@ -22,13 +22,29 @@ import { AtlassianConnectionsService } from './atlassian-connections.service.js'
 import { AtlassianOAuthStateStore } from './atlassian-oauth-state.store.js';
 import { AtlassianOAuthService } from './atlassian-oauth.service.js';
 
-export interface AtlassianOAuthCallbackResult {
-  workspaceId: string;
-  status: 'authorized';
-  cloudId: string;
-  siteName: string;
-  siteUrl: string;
-}
+export type JiraSetupState =
+  | 'authorization_required'
+  | 'site_selection_required'
+  | 'project_selection_required'
+  | 'connected';
+
+export type AtlassianOAuthCallbackResult =
+  | {
+      workspaceId: string;
+      status: 'authorized';
+      cloudId: string;
+      siteName: string;
+      siteUrl: string;
+    }
+  | {
+      workspaceId: string;
+      status: 'site_selection_required';
+      siteCount: number;
+    };
+
+const selectSiteSchema = z.object({
+  cloudId: z.string().min(1),
+});
 
 const selectProjectSchema = z.object({
   projectId: z.string().min(1),
@@ -49,6 +65,72 @@ export class JiraOAuthController {
 
     private readonly atlassianApi: AtlassianApiService,
   ) {}
+
+  @Get('setup')
+  @UseGuards(JwtAuthGuard)
+  public async getSetupState(
+    @CurrentUser()
+    principal: AuthPrincipal,
+  ) {
+    const workspaceId = this.requireWorkspaceId(principal);
+
+    const connection = await this.connections.getByWorkspaceId(workspaceId);
+
+    if (!connection) {
+      return {
+        workspaceId,
+
+        state: 'authorization_required' as const,
+
+        status: 'not_configured' as const,
+
+        site: null,
+
+        project: null,
+
+        lastError: null,
+      };
+    }
+
+    const state = this.resolveSetupState(
+      connection.cloudId,
+
+      connection.projectId,
+
+      connection.projectKey,
+    );
+
+    return {
+      workspaceId,
+
+      state,
+
+      status: connection.status,
+
+      site: connection.cloudId
+        ? {
+            cloudId: connection.cloudId,
+
+            name: connection.siteName,
+
+            url: connection.siteUrl,
+          }
+        : null,
+
+      project:
+        connection.projectId && connection.projectKey
+          ? {
+              id: connection.projectId,
+
+              key: connection.projectKey,
+
+              name: connection.projectName,
+            }
+          : null,
+
+      lastError: connection.lastError,
+    };
+  }
 
   @Get('oauth/authorize')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -177,9 +259,13 @@ export class JiraOAuthController {
     }
 
     if (resources.length > 1) {
-      throw new BadRequestException(
-        'Multiple Atlassian sites are accessible; explicit site selection is required',
-      );
+      return {
+        workspaceId,
+
+        status: 'site_selection_required',
+
+        siteCount: resources.length,
+      };
     }
 
     const resource = resources[0];
@@ -204,6 +290,84 @@ export class JiraOAuthController {
       siteName: resource.name,
 
       siteUrl: resource.url,
+    };
+  }
+
+  @Get('sites')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  public async getSites(
+    @CurrentUser()
+    principal: AuthPrincipal,
+  ) {
+    const workspaceId = this.requireWorkspaceId(principal);
+
+    await this.connections.requireByWorkspaceId(workspaceId);
+
+    const accessToken = await this.connections.getAccessToken(workspaceId);
+
+    return this.atlassianApi.getAccessibleResources(accessToken);
+  }
+
+  @Post('site')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  public async selectSite(
+    @CurrentUser()
+    principal: AuthPrincipal,
+
+    @Body()
+    body: unknown,
+  ) {
+    const workspaceId = this.requireWorkspaceId(principal);
+
+    const parsed = selectSiteSchema.safeParse(body);
+
+    if (!parsed.success) {
+      throw new BadRequestException('cloudId is required');
+    }
+
+    await this.connections.requireByWorkspaceId(workspaceId);
+
+    const accessToken = await this.connections.getAccessToken(workspaceId);
+
+    const resources =
+      await this.atlassianApi.getAccessibleResources(accessToken);
+
+    const resource = resources.find(
+      (candidate) => candidate.id === parsed.data.cloudId,
+    );
+
+    if (!resource) {
+      throw new BadRequestException(
+        'Selected Atlassian site is not accessible',
+      );
+    }
+
+    const connection = await this.connections.selectSite({
+      workspaceId,
+
+      cloudId: resource.id,
+
+      siteName: resource.name,
+
+      siteUrl: resource.url,
+    });
+
+    return {
+      workspaceId: connection.workspaceId,
+
+      state: 'project_selection_required' as const,
+
+      status: connection.status,
+
+      site: {
+        cloudId: connection.cloudId,
+
+        name: connection.siteName,
+
+        url: connection.siteUrl,
+      },
     };
   }
 
@@ -355,6 +519,22 @@ export class JiraOAuthController {
         name: project.name,
       },
     };
+  }
+
+  private resolveSetupState(
+    cloudId: string | null,
+    projectId: string | null,
+    projectKey: string | null,
+  ): JiraSetupState {
+    if (!cloudId) {
+      return 'site_selection_required';
+    }
+
+    if (!projectId || !projectKey) {
+      return 'project_selection_required';
+    }
+
+    return 'connected';
   }
 
   private requireWorkspaceId(principal: AuthPrincipal): string {

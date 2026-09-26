@@ -62,6 +62,8 @@ import { RolesGuard } from './roles.guard.js';
     AccessTokenService,
     JwtAuthGuard,
     RolesGuard,
+    RefreshTokenService,
+    RefreshCookieService,
   ],
 })
 export class AuthModule {}
