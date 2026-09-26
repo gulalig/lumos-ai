@@ -1,9 +1,10 @@
-import { MeetingControls } from '@/features/meeting/MeetingControls';
+import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
 
-export default function Home() {
+export default function HomePage() {
   return (
-    <main>
-      <MeetingControls />
-    </main>
+    <PagePlaceholder
+      title="Lumos"
+      description="Meeting intelligence that turns conversation into execution."
+    />
   );
 }
