@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -11,7 +12,10 @@ import (
 )
 
 type Config struct {
-	RedisURL string
+	NodeEnv            string
+	MetricsBearerToken string
+	MetricsPrivateOnly bool
+	RedisURL           string
 
 	LiveKitBotIdentity string
 	LiveKitURL         string
@@ -66,6 +70,9 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
+		NodeEnv:            strings.TrimSpace(os.Getenv("NODE_ENV")),
+		MetricsBearerToken: strings.TrimSpace(os.Getenv("METRICS_BEARER_TOKEN")),
+		MetricsPrivateOnly: os.Getenv("METRICS_PRIVATE_ONLY") == "true",
 		RedisURL: strings.TrimSpace(
 			os.Getenv("REDIS_URL"),
 		),
@@ -224,6 +231,25 @@ func applyDefaults(
 func validate(
 	cfg Config,
 ) error {
+	if cfg.NodeEnv != "" && cfg.NodeEnv != "development" && cfg.NodeEnv != "test" && cfg.NodeEnv != "production" {
+		return fmt.Errorf("NODE_ENV must be development, test, or production")
+	}
+	if cfg.NodeEnv == "production" {
+		if cfg.MetricsBearerToken == "" && !cfg.MetricsPrivateOnly {
+			return fmt.Errorf("production metrics require METRICS_BEARER_TOKEN or explicit METRICS_PRIVATE_ONLY=true")
+		}
+		for name, endpoint := range map[string]struct{ value, scheme string }{
+			"REDIS_URL":                {cfg.RedisURL, "rediss"},
+			"LIVEKIT_URL":              {cfg.LiveKitURL, "wss"},
+			"ASSEMBLYAI_STREAMING_URL": {cfg.AssemblyAIStreamingURL, "wss"},
+			"GROQ_BASE_URL":            {cfg.GroqBaseURL, "https"},
+		} {
+			parsed, err := url.Parse(endpoint.value)
+			if err != nil || parsed.Scheme != endpoint.scheme || parsed.Hostname() == "" {
+				return fmt.Errorf("%s must use a secure production URL", name)
+			}
+		}
+	}
 	required :=
 		map[string]string{
 			"REDIS_URL": cfg.RedisURL,

@@ -6,7 +6,5 @@ export function interventionGapId(
   sprintItemId: string,
   reason: InterventionReason,
 ): string {
-  return createHash('sha256')
-    .update(`${sprintItemId}:${reason}`)
-    .digest('hex');
+  return createHash('sha256').update(`${sprintItemId}:${reason}`).digest('hex');
 }

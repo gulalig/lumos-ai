@@ -1,10 +1,5 @@
-import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
+import { LandingPage } from "@/components/landing/LandingPage";
 
 export default function HomePage() {
-  return (
-    <PagePlaceholder
-      title="Lumos"
-      description="Meeting intelligence that turns conversation into execution."
-    />
-  );
+  return <LandingPage />;
 }

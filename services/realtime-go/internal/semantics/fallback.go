@@ -414,16 +414,9 @@ func fallbackReasonForContext(
 	validCount := 0
 	usefulCount := 0
 
-	groundingText :=
-		input.GroundingText()
-
 	for _, candidate := range candidates {
 
-		if !candidateIsValidWithEvidence(
-			candidate,
-			input.Current,
-			groundingText,
-		) {
+		if !candidateIsValidInContext(candidate, input) {
 			continue
 		}
 
@@ -583,9 +576,6 @@ func mergeCoverageCandidatesContext(
 		return result
 	}
 
-	groundingText :=
-		input.GroundingText()
-
 	for _, candidate := range fallbackCandidates {
 
 		if candidate.Kind !=
@@ -593,11 +583,7 @@ func mergeCoverageCandidatesContext(
 			continue
 		}
 
-		if !candidateIsValidWithEvidence(
-			candidate,
-			input.Current,
-			groundingText,
-		) {
+		if !candidateIsValidInContext(candidate, input) {
 			continue
 		}
 
@@ -690,4 +676,32 @@ func candidateMergeKey(
 		},
 		"|",
 	)
+}
+
+func candidateIsValidInContext(candidate Candidate, input EvidenceContext) bool {
+	if !candidate.RefinesPrevious {
+		return candidateIsValid(candidate, input.Current)
+	}
+	if input.Previous == nil {
+		return false
+	}
+	grounding := input.GroundingText()
+	// The actor has already grounded the prior owner. An answer from a
+	// different participant must not invalidate that ownership.
+	if prior := input.PreviousCommitment; prior != nil && candidate.Kind == KindCommitment &&
+		(candidate.Owner == "" || strings.EqualFold(candidate.Owner, prior.Owner)) {
+		candidate.Owner = ""
+		if ValidateGrounding(candidate, grounding) != nil {
+			return false
+		}
+		if candidate.Summary == "" {
+			candidate.Summary = prior.Summary
+		}
+		_, err := candidate.ToObservation(input.Current)
+		return err == nil
+	}
+	if candidateIsValidWithEvidence(candidate, input.Current, grounding) {
+		return true
+	}
+	return candidateIsValidWithEvidence(candidate, *input.Previous, grounding)
 }

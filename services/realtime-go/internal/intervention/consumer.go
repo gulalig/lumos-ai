@@ -13,6 +13,7 @@ import (
 	"lumos/realtime-go/internal/meetinglease"
 	"lumos/realtime-go/internal/redisclient"
 	"lumos/realtime-go/internal/redisstream"
+	"lumos/realtime-go/internal/speechfloor"
 )
 
 const (
@@ -398,38 +399,72 @@ func (c *Consumer) process(
 	// If speaking itself fails, the Redis stream event remains
 	// pending and no delivered marker exists, so recovery can
 	// safely retry it.
-	if err :=
-		c.redis.FencedCheck(
-			ctx,
+	// Keep this stream entry in-flight through expected coordination
+	// interruptions. The speaker waits on the floor; no recovery idle timer
+	// and no delivered marker/ACK applies until speech succeeds or is stale.
+	attemptSpeaker := c.speaker
+	prepared := false
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err :=
+			c.redis.FencedCheck(
+				ctx,
 
-			meetinglease.LeaseKey(
-				c.lease.MeetingID,
-			),
+				meetinglease.LeaseKey(
+					c.lease.MeetingID,
+				),
 
-			meetinglease.FenceKey(
-				c.lease.MeetingID,
-			),
+				meetinglease.FenceKey(
+					c.lease.MeetingID,
+				),
 
-			c.lease.Token,
-			c.lease.Fence,
-		); err != nil {
+				c.lease.Token,
+				c.lease.Fence,
+			); err != nil {
 
-		return fmt.Errorf(
-			"verify intervention ownership before speaking: %w",
-			err,
-		)
-	}
+			return fmt.Errorf(
+				"verify intervention ownership before speaking: %w",
+				err,
+			)
+		}
 
-	if err :=
-		c.speaker.Speak(
-			ctx,
-			event,
-		); err != nil {
+		if err := CheckCurrent(ctx, c.redis, event); err != nil {
+			if errors.Is(err, ErrStale) {
+				return c.completeDelivery(ctx, stream, message.ID, key, event)
+			}
+			return fmt.Errorf("check intervention gap: %w", err)
+		}
 
-		return fmt.Errorf(
-			"speak intervention: %w",
-			err,
-		)
+		if !prepared {
+			if preparing, ok := attemptSpeaker.(PreparingSpeaker); ok {
+				var err error
+				attemptSpeaker, err = preparing.Prepare(ctx, event)
+				if err != nil {
+					return fmt.Errorf("prepare intervention speech: %w", err)
+				}
+			}
+			prepared = true
+		}
+		if err :=
+			attemptSpeaker.Speak(
+				ctx,
+				event,
+			); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if errors.Is(err, ErrStale) {
+				return c.completeDelivery(ctx, stream, message.ID, key, event)
+			}
+			if errors.Is(err, speechfloor.ErrInterrupted) {
+				c.logger.Info("intervention speech interrupted; waiting for quiet floor", "eventId", event.ID, "reason", err)
+				continue
+			}
+			return fmt.Errorf("speak intervention: %w", err)
+		}
+		break
 	}
 
 	// ---------------------------------------------------------

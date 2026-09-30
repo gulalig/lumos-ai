@@ -20,10 +20,7 @@ export type WorkspaceMemberRole = 'owner' | 'admin' | 'member';
   name: 'workspace_members',
 })
 @Unique('workspace_members_workspace_user_key', ['userId', 'workspaceId'])
-@Check(
-  'workspace_members_role_check',
-  `"role" IN ('owner', 'admin', 'member')`,
-)
+@Check('workspace_members_role_check', `"role" IN ('owner', 'admin', 'member')`)
 @Index('idx_workspace_members_workspace_id', ['workspaceId'])
 @Index('idx_workspace_members_user_id', ['userId'])
 export class WorkspaceMemberEntity {

@@ -11,6 +11,16 @@ coverage/
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+!**/.env.example
+.dev.vars*
+*.pem
+*.key
+.open-next/
+.wrangler/
+*.tsbuildinfo
+services/realtime-go/*.exe
 
 # Logs
 *.log
@@ -34,3 +44,9 @@ playwright-report/
 # Temporary
 tmp/
 .temp/
+
+# Local tool state and scratch exports (never deployment inputs)
+.yelle/
+.codex/
+.agents/
+lumos-*-pack.txt

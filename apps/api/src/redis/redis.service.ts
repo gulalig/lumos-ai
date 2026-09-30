@@ -9,16 +9,12 @@ import { Redis } from 'ioredis';
 import type { Env } from '../config/env.js';
 
 @Injectable()
-export class RedisService
-  implements OnModuleInit, OnModuleDestroy
-{
+export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
 
   readonly client: Redis;
 
-  constructor(
-    private readonly config: ConfigService<Env, true>,
-  ) {
+  constructor(private readonly config: ConfigService<Env, true>) {
     this.client = new Redis(
       this.config.get('REDIS_URL', {
         infer: true,

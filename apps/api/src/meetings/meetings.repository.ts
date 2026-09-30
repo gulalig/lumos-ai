@@ -51,6 +51,18 @@ export class MeetingsRepository {
     });
   }
 
+  async findByWorkspaceId(workspaceId: string): Promise<Meeting[]> {
+    return this.repository.find({
+      where: {
+        workspaceId,
+      },
+
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+  }
+
   async findWorkspaceBound(): Promise<MeetingEntity[]> {
     return this.repository.find({
       where: {
@@ -58,6 +70,35 @@ export class MeetingsRepository {
       },
       order: {
         createdAt: 'ASC',
+      },
+    });
+  }
+
+  async findRecentByWorkspace(
+    workspaceId: string,
+    limit = 5,
+  ): Promise<MeetingEntity[]> {
+    return this.repository.find({
+      where: {
+        workspaceId,
+      },
+
+      order: {
+        createdAt: 'DESC',
+      },
+
+      take: limit,
+    });
+  }
+
+  async findByWorkspace(workspaceId: string): Promise<MeetingEntity[]> {
+    return this.repository.find({
+      where: {
+        workspaceId,
+      },
+
+      order: {
+        createdAt: 'DESC',
       },
     });
   }

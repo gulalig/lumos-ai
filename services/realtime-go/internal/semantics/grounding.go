@@ -170,12 +170,21 @@ func containsExplicitOwnershipAcceptance(
 		" i'll own it",
 		" i’ll own it",
 		" i will own it",
+
 		" i'll take it",
 		" i’ll take it",
 		" i will take it",
 		" i can take it",
+
+		" i can take care of",
+		" i can also take care of",
+		" i can handle",
+		" i can take ownership of",
+		" i can also take ownership of",
+
 		" assign it to me",
 		" put it on me",
+
 		" that's mine",
 		" that’s mine",
 	}

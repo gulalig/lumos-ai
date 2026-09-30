@@ -2,6 +2,7 @@
 
 import dotenv from 'dotenv';
 import { DataSource } from 'typeorm';
+import { databaseConnectionOptions } from './connection-options.js';
 
 dotenv.config({
   path: resolve(process.cwd(), '../../.env'),
@@ -27,7 +28,13 @@ const extension = runningFromTypeScript ? 'ts' : 'js';
 const appDataSource = new DataSource({
   type: 'postgres',
 
-  url: databaseUrl,
+  ...databaseConnectionOptions({
+    DATABASE_URL: databaseUrl,
+    NODE_ENV: process.env.NODE_ENV,
+    DATABASE_SSL_MODE: process.env.DATABASE_SSL_MODE as
+      'disable' | 'verify-full' | undefined,
+    DATABASE_SSL_CA_FILE: process.env.DATABASE_SSL_CA_FILE,
+  }),
 
   synchronize: false,
 

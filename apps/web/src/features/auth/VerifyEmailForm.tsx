@@ -42,9 +42,13 @@ export function VerifyEmailForm() {
   });
 
   const onSubmit = async (values: VerifyEmailFormValues) => {
-    await verifyEmail(values).unwrap();
+    try {
+      await verifyEmail(values).unwrap();
 
-    router.replace(ROUTES.auth.login);
+      router.replace(ROUTES.auth.login);
+    } catch {
+      // The mutation error is rendered by the form.
+    }
   };
 
   const handleResend = async () => {
@@ -52,9 +56,13 @@ export function VerifyEmailForm() {
       return;
     }
 
-    await resend({
-      email,
-    }).unwrap();
+    try {
+      await resend({
+        email,
+      }).unwrap();
+    } catch {
+      // The mutation state handles the request error.
+    }
   };
 
   return (

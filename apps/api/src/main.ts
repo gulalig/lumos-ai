@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,
@@ -9,11 +9,15 @@ import {
 import { AppModule } from './app.module.js';
 import type { Env } from './config/env.js';
 import cookie from '@fastify/cookie';
+import { trustedProxyRanges } from './config/production.js';
 
 async function bootstrap() {
+  await ConfigModule.envVariablesLoaded;
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter(),
+    new FastifyAdapter({
+      trustProxy: trustedProxyRanges(process.env.TRUSTED_PROXY_CIDRS),
+    }),
   );
 
   const config = app.get(ConfigService<Env, true>);
@@ -30,7 +34,7 @@ async function bootstrap() {
 
   app.enableCors({
     origin: webOrigin,
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
 
@@ -39,10 +43,7 @@ async function bootstrap() {
 
   await app.listen(port, '0.0.0.0');
 
-  Logger.log(
-    `LUMOS API running on http://localhost:${port}/api/v1`,
-    'Bootstrap',
-  );
+  Logger.log('LUMOS API listening on port ' + port + ' (/api/v1)', 'Bootstrap');
 }
 
 await bootstrap();

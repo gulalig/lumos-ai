@@ -16,6 +16,11 @@ export interface CreateWorkspaceMemberInput {
   teamName?: string | null;
 }
 
+export interface UpdateWorkspaceMemberProfileInput {
+  jobTitle?: string | null;
+  teamName?: string | null;
+}
+
 @Injectable()
 export class WorkspaceMembersRepository {
   public constructor(
@@ -78,6 +83,28 @@ export class WorkspaceMembersRepository {
 
       teamName: input.teamName ?? null,
     });
+
+    return repository.save(member);
+  }
+
+  public async updateProfile(
+    memberId: string,
+    input: UpdateWorkspaceMemberProfileInput,
+    manager?: EntityManager,
+  ): Promise<WorkspaceMemberEntity> {
+    const repository = this.getRepository(manager);
+
+    const member = await repository.findOneByOrFail({
+      id: memberId,
+    });
+
+    if (input.jobTitle !== undefined) {
+      member.jobTitle = input.jobTitle;
+    }
+
+    if (input.teamName !== undefined) {
+      member.teamName = input.teamName;
+    }
 
     return repository.save(member);
   }

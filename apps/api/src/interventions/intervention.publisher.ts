@@ -3,10 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { RedisService } from '../redis/redis.service.js';
 
 import { interventionGapId } from './intervention-gap.js';
-import type {
-  Intervention,
-  InterventionReason,
-} from './intervention.js';
+import type { Intervention, InterventionReason } from './intervention.js';
 
 export const INTERVENTION_EVENT_TYPE = 'intervention.requested.v1';
 
@@ -14,21 +11,31 @@ export const INTERVENTION_COOLDOWN_MS = 60_000;
 
 export type InterventionPublishResult =
   | {
-  status: 'published';
-  streamId: string;
-}
+      status: 'published';
+      streamId: string;
+    }
   | {
-  status: 'duplicate';
-  streamId: string;
-}
+      status: 'duplicate';
+      streamId: string;
+    }
   | {
-  status: 'suppressed';
-  streamId: null;
-}
+      status: 'suppressed';
+      streamId: null;
+    }
   | {
-  status: 'resolved';
-  streamId: null;
-};
+      status: 'resolved';
+      streamId: null;
+    };
+
+export interface InterventionGapState {
+  gapId: string;
+  reason: InterventionReason;
+  sprintItemId: string;
+  askedCount: number;
+  lastAskedAt: Date | null;
+  resolvedAt: Date | null;
+  resolvedObservationId: string | null;
+}
 
 const PUBLISH_SCRIPT = `
 local existing = redis.call(
@@ -144,26 +151,16 @@ return 1
 
 @Injectable()
 export class InterventionPublisher {
-  constructor(
-    private readonly redis: RedisService,
-  ) {}
+  constructor(private readonly redis: RedisService) {}
 
   async publish(
     intervention: Intervention,
   ): Promise<InterventionPublishResult> {
-    const streamKey = this.streamKey(
-      intervention.meetingId,
-    );
+    const streamKey = this.streamKey(intervention.meetingId);
 
-    const dedupeKey = this.dedupeKey(
-      intervention.meetingId,
-      intervention.id,
-    );
+    const dedupeKey = this.dedupeKey(intervention.meetingId, intervention.id);
 
-    const stateKey = this.stateKey(
-      intervention.meetingId,
-      intervention.gapId,
-    );
+    const stateKey = this.stateKey(intervention.meetingId, intervention.gapId);
 
     const result = await this.redis.client.eval(
       PUBLISH_SCRIPT,
@@ -182,9 +179,7 @@ export class InterventionPublisher {
     );
 
     if (typeof result !== 'string') {
-      throw new Error(
-        'Intervention publish returned invalid result',
-      );
+      throw new Error('Intervention publish returned invalid result');
     }
 
     if (result === 'suppressed') {
@@ -204,24 +199,18 @@ export class InterventionPublisher {
     if (result.startsWith('published:')) {
       return {
         status: 'published',
-        streamId: result.slice(
-          'published:'.length,
-        ),
+        streamId: result.slice('published:'.length),
       };
     }
 
     if (result.startsWith('duplicate:')) {
       return {
         status: 'duplicate',
-        streamId: result.slice(
-          'duplicate:'.length,
-        ),
+        streamId: result.slice('duplicate:'.length),
       };
     }
 
-    throw new Error(
-      `Intervention publish returned unknown result: ${result}`,
-    );
+    throw new Error(`Intervention publish returned unknown result: ${result}`);
   }
 
   async resolveGap(
@@ -231,15 +220,9 @@ export class InterventionPublisher {
     observationId: string,
     resolvedAt: Date,
   ): Promise<boolean> {
-    const gapId = interventionGapId(
-      sprintItemId,
-      reason,
-    );
+    const gapId = interventionGapId(sprintItemId, reason);
 
-    const stateKey = this.stateKey(
-      meetingId,
-      gapId,
-    );
+    const stateKey = this.stateKey(meetingId, gapId);
 
     const result = await this.redis.client.eval(
       RESOLVE_SCRIPT,
@@ -252,32 +235,74 @@ export class InterventionPublisher {
     return result === 1;
   }
 
-  private streamKey(
+  async getGapState(
     meetingId: string,
-  ): string {
-    return (
-      `lumos:meeting:{${meetingId}}:` +
-      'interventions'
+    gapId: string,
+  ): Promise<InterventionGapState | null> {
+    const state = await this.redis.client.hgetall(
+      this.stateKey(meetingId, gapId),
     );
+
+    if (
+      !state ||
+      Object.keys(state).length === 0 ||
+      !state.gap_id ||
+      !state.reason ||
+      !state.sprint_item_id
+    ) {
+      return null;
+    }
+
+    if (
+      state.reason !== 'missing_owner' &&
+      state.reason !== 'missing_due_date'
+    ) {
+      return null;
+    }
+
+    const lastAskedAtMs = state.last_asked_at_ms
+      ? Number(state.last_asked_at_ms)
+      : null;
+
+    const resolvedAtMs = state.resolved_at_ms
+      ? Number(state.resolved_at_ms)
+      : null;
+
+    return {
+      gapId: state.gap_id,
+
+      reason: state.reason,
+
+      sprintItemId: state.sprint_item_id,
+
+      askedCount: Number(state.asked_count ?? 0),
+
+      lastAskedAt:
+        lastAskedAtMs !== null && Number.isFinite(lastAskedAtMs)
+          ? new Date(lastAskedAtMs)
+          : null,
+
+      resolvedAt:
+        resolvedAtMs !== null && Number.isFinite(resolvedAtMs)
+          ? new Date(resolvedAtMs)
+          : null,
+
+      resolvedObservationId: state.resolved_observation_id ?? null,
+    };
   }
 
-  private dedupeKey(
-    meetingId: string,
-    interventionId: string,
-  ): string {
+  private streamKey(meetingId: string): string {
+    return `lumos:meeting:{${meetingId}}:` + 'interventions';
+  }
+
+  private dedupeKey(meetingId: string, interventionId: string): string {
     return (
       `lumos:meeting:{${meetingId}}:` +
       `intervention:${interventionId}:stream-id`
     );
   }
 
-  private stateKey(
-    meetingId: string,
-    gapId: string,
-  ): string {
-    return (
-      `lumos:meeting:{${meetingId}}:` +
-      `intervention-gap:${gapId}`
-    );
+  private stateKey(meetingId: string, gapId: string): string {
+    return `lumos:meeting:{${meetingId}}:` + `intervention-gap:${gapId}`;
   }
 }

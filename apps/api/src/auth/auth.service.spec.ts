@@ -17,6 +17,7 @@ import { AuthService } from './auth.service.js';
 import { OtpService } from './otp.service.js';
 import { PasswordService } from './password.service.js';
 import { RefreshTokenService } from './refresh-token.service.js';
+import { WorkspaceEntity } from '../identity/entities/workspace.entity.js';
 
 function createFixture() {
   const manager = {
@@ -133,9 +134,11 @@ describe('AuthService signup', () => {
     const result = await fixture.service.signup({
       email: ' Test@Example.com ',
 
-      displayName: ' Gulali ',
-
       password: 'very-secure-password',
+
+      acceptedTerms: true,
+
+      newsletterOptIn: true,
     });
 
     expect(fixture.passwords.hash).toHaveBeenCalledWith('very-secure-password');
@@ -149,10 +152,15 @@ describe('AuthService signup', () => {
       expect.objectContaining({
         email: 'test@example.com',
 
-        displayName: 'Gulali',
+        displayName: null,
 
         passwordHash: '$argon2id$test-hash',
+
+        termsAcceptedAt: expect.any(Date),
+
+        newsletterOptIn: true,
       }),
+
       fixture.manager,
     );
 
@@ -170,7 +178,7 @@ describe('AuthService signup', () => {
     expect(fixture.email.sendVerificationCode).toHaveBeenCalledWith({
       email: 'test@example.com',
 
-      displayName: 'Gulali',
+      displayName: null,
 
       code: '123456',
 
@@ -203,9 +211,11 @@ describe('AuthService signup', () => {
       fixture.service.signup({
         email: ' TEST@example.com ',
 
-        displayName: 'Test User',
-
         password: 'very-secure-password',
+
+        acceptedTerms: true,
+
+        newsletterOptIn: false,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
 
@@ -223,15 +233,39 @@ describe('AuthService signup', () => {
       fixture.service.signup({
         email: 'test@example.com',
 
-        displayName: 'Test User',
-
         password: 'short',
+
+        acceptedTerms: true,
+
+        newsletterOptIn: false,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
 
     expect(fixture.dataSource.transaction).not.toHaveBeenCalled();
 
     expect(fixture.passwords.hash).not.toHaveBeenCalled();
+
+    expect(fixture.email.sendVerificationCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects signup when terms have not been accepted', async () => {
+    const fixture = createFixture();
+
+    await expect(
+      fixture.service.signup({
+        email: 'test@example.com',
+
+        password: 'very-secure-password',
+
+        acceptedTerms: false,
+
+        newsletterOptIn: false,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(fixture.dataSource.transaction).not.toHaveBeenCalled();
+
+    expect(fixture.users.create).not.toHaveBeenCalled();
 
     expect(fixture.email.sendVerificationCode).not.toHaveBeenCalled();
   });
@@ -312,6 +346,14 @@ describe('AuthService login', () => {
       emailVerifiedAt: new Date(),
     });
 
+    const workspace = Object.assign(new WorkspaceEntity(), {
+      id: 'workspace-1',
+
+      name: 'Test Workspace',
+
+      slug: 'test-workspace',
+    });
+
     const membership = Object.assign(new WorkspaceMemberEntity(), {
       id: 'member-1',
 
@@ -322,6 +364,8 @@ describe('AuthService login', () => {
       role: 'owner' as const,
 
       createdAt: new Date(),
+
+      workspace,
     });
 
     vi.mocked(fixture.users.findByEmail).mockResolvedValue(user);
@@ -354,6 +398,8 @@ describe('AuthService login', () => {
       workspaceMemberId: 'member-1',
 
       workspaceId: 'workspace-1',
+
+      name: 'Test Workspace',
 
       role: 'owner',
     });

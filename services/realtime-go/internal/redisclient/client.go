@@ -2,6 +2,7 @@ package redisclient
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"strings"
@@ -27,10 +28,14 @@ func New(
 		redisURL,
 	)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"parse redis url: %w",
-			err,
-		)
+		return nil, errors.New("REDIS_URL must be a valid native Redis URL")
+	}
+	// Upstash's native endpoint supports RESP2; avoid optional CLIENT SETINFO
+	// and RESP3 push/maintenance commands that aren't used by our architecture.
+	options.Protocol = 2
+	options.DisableIdentity = true
+	if options.TLSConfig != nil {
+		options.TLSConfig.MinVersion = tls.VersionTLS12
 	}
 
 	return &Client{
@@ -349,12 +354,12 @@ func (c *Client) XGroupProgress(
 		}
 
 		return StreamGroupProgress{
-    	Pending: info.Pending,
+			Pending: info.Pending,
 
-    	Lag: info.Lag,
+			Lag: info.Lag,
 
-    	LastDeliveredID: lastDeliveredID,
-    }, nil
+			LastDeliveredID: lastDeliveredID,
+		}, nil
 	}
 
 	return StreamGroupProgress{},

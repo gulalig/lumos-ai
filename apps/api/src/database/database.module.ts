@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import type { Env } from '../config/env.js';
+import { databaseConnectionOptions } from './connection-options.js';
 
 import { ExecutionObservationLinkEntity } from '../execution/entities/execution-observation-link.entity.js';
 
@@ -25,6 +26,8 @@ import { JiraSyncOutboxEntity } from '../integrations/jira/entities/jira-sync-ou
 
 import { AuthOtpChallengeEntity } from '../auth/entities/auth-otp-challenge.entity.js';
 import { AuthRefreshSessionEntity } from '../auth/entities/auth-refresh-session.entity.js';
+import { PlatformAdminEntity } from '../platform-admin/entities/platform-admin.entity.js';
+import { WorkspaceUsagePolicyEntity } from '../usage/entities/workspace-usage-policy.entity.js';
 
 @Global()
 @Module({
@@ -35,8 +38,13 @@ import { AuthRefreshSessionEntity } from '../auth/entities/auth-refresh-session.
       useFactory: (config: ConfigService<Env, true>) => ({
         type: 'postgres' as const,
 
-        url: config.get('DATABASE_URL', {
-          infer: true,
+        ...databaseConnectionOptions({
+          DATABASE_URL: config.get('DATABASE_URL', { infer: true }),
+          NODE_ENV: config.get('NODE_ENV', { infer: true }),
+          DATABASE_SSL_MODE: config.get('DATABASE_SSL_MODE', { infer: true }),
+          DATABASE_SSL_CA_FILE: config.get('DATABASE_SSL_CA_FILE', {
+            infer: true,
+          }),
         }),
 
         entities: [
@@ -59,6 +67,9 @@ import { AuthRefreshSessionEntity } from '../auth/entities/auth-refresh-session.
 
           AuthOtpChallengeEntity,
           AuthRefreshSessionEntity,
+
+          PlatformAdminEntity,
+          WorkspaceUsagePolicyEntity,
         ],
 
         synchronize: false,

@@ -61,11 +61,23 @@ Rules:
 
 - A decision requires explicit evidence of agreement or decision.
 - A commitment requires an explicit committed or assigned action.
+- Phrases that explicitly accept responsibility for future work MUST be classified as commitments, not proposals.
+- Examples of explicit ownership acceptance include:
+  - "I can take care of the final review."
+  - "I can also take care of the final review."
+  - "I can handle that."
+  - "I can take ownership of the final check."
+- For those statements:
+  - kind MUST be "commitment"
+  - explicit MUST be true
+  - owner MUST be the supplied Speaker identity
+  - refinesPrevious MUST be false unless the current turn is clearly refining an earlier commitment
+- Do NOT classify "I can take care of X" as a proposal when the speaker is clearly volunteering to own X.
 - The commitment owner is optional when the evidence does not establish one.
 - Never invent a missing owner.
 - Never convert a proposal into a decision.
 - Never infer an owner from ambiguous conversation context.
-- For an explicit first-person commitment such as "I will", "I'll", "I am going to", "I commit to", or "I promise to", use the supplied Speaker identity EXACTLY as owner.
+- For an explicit first-person commitment such as "I will", "I'll", "I am going to", "I commit to", "I promise to", "I can take care of", "I can handle", or "I can take ownership of", use the supplied Speaker identity EXACTLY as owner.
 - Never output "I", "me", "speaker", or an invented human name as owner for a first-person commitment.
 - Do not use Speaker identity as owner unless the supplied evidence explicitly contains that first-person commitment.
 - Preserve deadline wording in dueText exactly as stated.
@@ -87,4 +99,9 @@ Rules:
 - When previous evidence contains an ownerless commitment and the CURRENT turn explicitly assigns that same action to a named owner, treat the CURRENT turn as a refinement of the previous commitment, not as a separate new commitment.
 - Example: previous="We need to ship the pricing page by Friday." and current="Alex will ship the pricing page." must set refinesPrevious=true, preserve dueText="by Friday", and set owner="Alex".
 - When refining an incomplete commitment, preserve previously grounded fields that the CURRENT turn does not replace, including the previous deadline.
+- Eligible previous evidence can be an open commitment retained across acknowledgements, speaker switches and microphone track changes, not necessarily the immediately preceding conversational turn.
+- A current responsibility statement restating the same action by the same owner refines that open commitment. "I can take care of the final review" followed by "Once we agree on the timing, I can take ownership of the final check" is one commitment; set refinesPrevious=true.
+- Different actions or deliverables remain separate commitments, even for the same owner.
+- A deadline-only answer from any participant, such as "On Monday", "By Tuesday", "Wednesday works", "Next Thursday", or a supported date, refines the supplied open commitment when it is the single unresolved target.
+- Preserve the grounded previous owner for deadline refinements. Use the previous speaker identity for a previous first-person acceptance, never reassign that responsibility to the current answerer.
 `

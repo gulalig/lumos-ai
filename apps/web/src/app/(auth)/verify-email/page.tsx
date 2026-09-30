@@ -9,3 +9,6 @@ export default function VerifyEmailPage() {
     </Suspense>
   );
 }
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Verify email" };

@@ -14,14 +14,8 @@ import { SprintItemEntity } from '../../sprints/entities/sprint-item.entity.js';
 @Entity({
   name: 'execution_observation_links',
 })
-@Index(
-  'execution_observation_links_meeting_idx',
-  ['meetingId'],
-)
-@Index(
-  'execution_observation_links_sprint_item_idx',
-  ['sprintItemId'],
-)
+@Index('execution_observation_links_meeting_idx', ['meetingId'])
+@Index('execution_observation_links_sprint_item_idx', ['sprintItemId'])
 export class ExecutionObservationLinkEntity {
   @PrimaryColumn({
     name: 'observation_id',

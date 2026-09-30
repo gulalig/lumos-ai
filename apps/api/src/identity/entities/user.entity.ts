@@ -21,8 +21,9 @@ export class UserEntity {
   @Column({
     name: 'display_name',
     type: 'text',
+    nullable: true,
   })
-  displayName!: string;
+  displayName!: string | null;
 
   @Column({
     name: 'password_hash',
@@ -37,6 +38,20 @@ export class UserEntity {
     nullable: true,
   })
   emailVerifiedAt!: Date | null;
+
+  @Column({
+    name: 'terms_accepted_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  termsAcceptedAt!: Date | null;
+
+  @Column({
+    name: 'newsletter_opt_in',
+    type: 'boolean',
+    default: false,
+  })
+  newsletterOptIn!: boolean;
 
   @CreateDateColumn({
     name: 'created_at',

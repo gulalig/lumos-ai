@@ -1,77 +1,74 @@
-export type MeetingStatus =
-  | 'created'
-  | 'active'
-  | 'ended';
+import { API_CONFIG } from "@/constants/api";
 
 export interface CreateMeetingResult {
   meetingId: string;
   roomName: string;
-  status: MeetingStatus;
+  status: "created" | "active" | "ended";
 }
 
-export interface Meeting {
-  id: string;
-  roomName: string;
-  status: MeetingStatus;
-
-  createdAt: string;
-  startedAt: string | null;
-  endedAt: string | null;
-}
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ??
-  'http://localhost:3001/api/v1';
+const API_BASE_URL = API_CONFIG.baseUrl;
 
 export async function createMeeting(
+  accessToken: string,
   signal?: AbortSignal,
 ): Promise<CreateMeetingResult> {
-  const response = await fetch(
-    `${API_BASE_URL}/meetings`,
-    {
-      method: 'POST',
+  const response = await fetch(`${API_BASE_URL}/meetings`, {
+    method: "POST",
 
-      headers: {
-        Accept: 'application/json',
-      },
-
-      cache: 'no-store',
-      signal,
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${accessToken}`,
     },
-  );
+
+    cache: "no-store",
+    signal,
+  });
 
   if (!response.ok) {
-    throw new Error(
-      `Failed to create meeting: ${response.status}`,
-    );
+    const body = await response.json().catch(() => null);
+
+    const message =
+      body &&
+      typeof body === "object" &&
+      "message" in body &&
+      typeof body.message === "string"
+        ? body.message
+        : `Failed to create meeting: ${response.status}`;
+
+    throw new Error(message);
   }
 
-  return await response.json() as CreateMeetingResult;
+  return (await response.json()) as CreateMeetingResult;
 }
 
 export async function endMeeting(
   meetingId: string,
+  accessToken: string,
   signal?: AbortSignal,
-): Promise<Meeting> {
-  const response = await fetch(
-    `${API_BASE_URL}/meetings/${encodeURIComponent(meetingId)}/end`,
-    {
-      method: 'POST',
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/end`, {
+    method: "POST",
 
-      headers: {
-        Accept: 'application/json',
-      },
-
-      cache: 'no-store',
-      signal,
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${accessToken}`,
     },
-  );
+
+    cache: "no-store",
+    signal,
+  });
 
   if (!response.ok) {
-    throw new Error(
-      `Failed to end meeting: ${response.status}`,
-    );
-  }
+    const body = await response.json().catch(() => null);
 
-  return await response.json() as Meeting;
+    const message =
+      body &&
+      typeof body === "object" &&
+      "message" in body &&
+      typeof body.message === "string"
+        ? body.message
+        : `Failed to end meeting: ${response.status}`;
+
+    throw new Error(message);
+  }
 }

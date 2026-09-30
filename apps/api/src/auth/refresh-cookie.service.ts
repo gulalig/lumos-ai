@@ -16,7 +16,9 @@ export class RefreshCookieService {
     this.secure =
       config.get('NODE_ENV', {
         infer: true,
-      }) === 'production';
+      }) === 'production' ||
+      config.get('API_PUBLIC_URL', { infer: true })?.startsWith('https://') ===
+        true;
 
     this.ttlDays = config.get('AUTH_REFRESH_TTL_DAYS', {
       infer: true,

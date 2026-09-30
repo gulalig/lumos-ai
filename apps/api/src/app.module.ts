@@ -14,6 +14,10 @@ import { JiraIntegrationModule } from './integrations/jira/jira-integration.modu
 import { ExecutionModule } from './execution/execution.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { OnboardingModule } from './onboarding/onboarding.module.js';
+import { DashboardModule } from './dashboard/dashboard.module.js';
+import { ActivityModule } from './activity/activity.module.js';
+import { PlatformAdminModule } from './platform-admin/platform-admin.module.js';
+import { UsageModule } from './usage/usage.module.js';
 
 @Module({
   imports: [
@@ -40,6 +44,10 @@ import { OnboardingModule } from './onboarding/onboarding.module.js';
     ExecutionModule,
     AuthModule,
     OnboardingModule,
+    DashboardModule,
+    ActivityModule,
+    PlatformAdminModule,
+    UsageModule,
   ],
 })
 export class AppModule {}

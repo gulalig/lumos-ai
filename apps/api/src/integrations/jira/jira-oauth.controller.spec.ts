@@ -1,9 +1,13 @@
 import { BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AuthPrincipal } from '../../auth/auth-principal.js';
 
 import { JiraOAuthController } from './jira-oauth.controller.js';
+
+const JIRA_ONBOARDING_REDIRECT_URL =
+  'https://app.example.com/onboarding/integration?provider=jira';
 
 function createPrincipal(
   role: 'owner' | 'admin' | 'member' = 'owner',
@@ -71,6 +75,7 @@ function createFixture() {
     oauthState as any,
     connections as any,
     atlassianApi as any,
+    new ConfigService({ WEB_ORIGIN: 'https://app.example.com' }) as any,
   );
 
   return {
@@ -251,7 +256,7 @@ describe('JiraOAuthController workspace scoping', () => {
     });
   });
 
-  it('returns site_selection_required from OAuth callback when multiple Atlassian sites are accessible', async () => {
+  it('returns onboarding redirect when multiple Atlassian sites are accessible', async () => {
     const fixture = createFixture();
 
     fixture.oauthState.consume.mockResolvedValue('workspace-from-state');
@@ -300,11 +305,7 @@ describe('JiraOAuthController workspace scoping', () => {
     expect(fixture.connections.selectSite).not.toHaveBeenCalled();
 
     expect(result).toEqual({
-      workspaceId: 'workspace-from-state',
-
-      status: 'site_selection_required',
-
-      siteCount: 2,
+      url: JIRA_ONBOARDING_REDIRECT_URL,
     });
   });
 
@@ -546,8 +547,8 @@ describe('JiraOAuthController workspace scoping', () => {
       }),
     );
 
-    expect(result.workspaceId).toBe('workspace-from-state');
-
-    expect(result.status).toBe('authorized');
+    expect(result).toEqual({
+      url: JIRA_ONBOARDING_REDIRECT_URL,
+    });
   });
 });

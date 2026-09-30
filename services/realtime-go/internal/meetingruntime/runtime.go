@@ -2,6 +2,7 @@ package meetingruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 
 	"lumos/realtime-go/internal/assemblyai"
 	"lumos/realtime-go/internal/evidence"
@@ -22,6 +24,7 @@ import (
 	"lumos/realtime-go/internal/redisclient"
 	"lumos/realtime-go/internal/redisstream"
 	"lumos/realtime-go/internal/semantics"
+	"lumos/realtime-go/internal/speechfloor"
 	"lumos/realtime-go/internal/transcription"
 	"lumos/realtime-go/internal/tts"
 )
@@ -388,6 +391,8 @@ func (r *Runtime) Run(
 			logger,
 			r.metrics,
 		)
+	floor := speechfloor.New(speechfloor.QuietWindow)
+	transcriptionManager.ConfigureFloor(floor)
 
 	// -------------------------------------------------------------------------
 	// LiveKit
@@ -419,6 +424,7 @@ func (r *Runtime) Run(
 		)
 	}
 
+	configureFloorReply(room, transcriptionManager)
 	// -------------------------------------------------------------------------
 	// TTS intervention output
 	// -------------------------------------------------------------------------
@@ -511,14 +517,21 @@ func (r *Runtime) Run(
 			interventionSpeaker,
 			logger,
 		)
+	interventionSpeaker.Coordinate(floor, func(ctx context.Context, event intervention.Event) error {
+		if err := r.redisClient.FencedCheck(ctx, meetinglease.LeaseKey(meetingID),
+			meetinglease.FenceKey(meetingID), lease.Token, lease.Fence); err != nil {
+			return err
+		}
+		return intervention.CheckCurrent(ctx, r.redisClient, event)
+	})
 
 	backgroundWG.Go(func() {
 		err :=
 			interventionConsumer.Run(
-				processingCtx,
+				mediaCtx,
 			)
 
-		if processingCtx.Err() != nil {
+		if mediaCtx.Err() != nil {
 			return
 		}
 
@@ -785,4 +798,20 @@ func waitForBackground(
 			"timed out waiting for meeting runtime background components",
 		)
 	}
+}
+
+func configureFloorReply(room *lksdk.Room, manager *transcription.Manager) {
+	manager.ConfigureFloorReply(func(identity, requestID string, granted bool) error {
+		kind := "busy"
+		if granted {
+			kind = "granted"
+		}
+		payload, err := json.Marshal(map[string]string{"type": kind, "requestId": requestID})
+		if err != nil {
+			return err
+		}
+		return room.LocalParticipant.PublishDataPacket(
+			&lksdk.UserDataPacket{Payload: payload, Topic: transcription.FloorTopic},
+			lksdk.WithDataPublishReliable(true), lksdk.WithDataPublishDestination([]string{identity}))
+	})
 }

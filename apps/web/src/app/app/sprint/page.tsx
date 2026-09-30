@@ -1,10 +1,8 @@
-import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
+import { SprintView } from "@/features/sprint/SprintView";
 
 export default function SprintPage() {
-  return (
-    <PagePlaceholder
-      title="Sprint"
-      description="Track execution items, owners, due dates and Jira sync."
-    />
-  );
+  return <SprintView />;
 }
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Sprint" };

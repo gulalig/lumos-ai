@@ -3,33 +3,54 @@ package meetingactor
 import (
 	"testing"
 
+	"lumos/realtime-go/internal/evidence"
 	"lumos/realtime-go/internal/semantics"
 )
 
 func TestFindSupersededObservationAllowsLikelyOwnerTranscriptionCorrection(
 	t *testing.T,
 ) {
-	actor := &Actor{
-		previousObservations: []semantics.Observation{
-			{
-				ID:    "observation-1",
-				Kind:  semantics.KindCommitment,
-				Owner: "Lumas Developer",
-			},
-		},
-	}
+	previousTurn :=
+		evidence.Turn{
+			EventID: "event-1",
+		}
 
-	candidate := semantics.Candidate{
-		Kind:  semantics.KindCommitment,
-		Owner: "Lumos Developer",
-	}
+	actor :=
+		&Actor{
+			previousObservations: []semantics.Observation{
+				{
+					ID: "observation-1",
+
+					Kind: semantics.KindCommitment,
+
+					EvidenceEventID: previousTurn.EventID,
+
+					Owner: "Lumas Developer",
+				},
+			},
+		}
+
+	candidate :=
+		semantics.Candidate{
+			Kind: semantics.KindCommitment,
+
+			Owner: "Lumos Developer",
+		}
+
+	input :=
+		semantics.EvidenceContext{
+			Previous: &previousTurn,
+		}
 
 	got :=
 		actor.findSupersededObservation(
 			candidate,
+			input,
 		)
 
-	if got != "observation-1" {
+	if got !=
+		"observation-1" {
+
 		t.Fatalf(
 			"expected transcription correction to supersede %q, got %q",
 			"observation-1",
@@ -41,24 +62,42 @@ func TestFindSupersededObservationAllowsLikelyOwnerTranscriptionCorrection(
 func TestFindSupersededObservationRejectsDifferentExistingOwner(
 	t *testing.T,
 ) {
-	actor := &Actor{
-		previousObservations: []semantics.Observation{
-			{
-				ID:    "observation-1",
-				Kind:  semantics.KindCommitment,
-				Owner: "Lumos Developer",
-			},
-		},
-	}
+	previousTurn :=
+		evidence.Turn{
+			EventID: "event-1",
+		}
 
-	candidate := semantics.Candidate{
-		Kind:  semantics.KindCommitment,
-		Owner: "Sam Developer",
-	}
+	actor :=
+		&Actor{
+			previousObservations: []semantics.Observation{
+				{
+					ID: "observation-1",
+
+					Kind: semantics.KindCommitment,
+
+					EvidenceEventID: previousTurn.EventID,
+
+					Owner: "Lumos Developer",
+				},
+			},
+		}
+
+	candidate :=
+		semantics.Candidate{
+			Kind: semantics.KindCommitment,
+
+			Owner: "Sam Developer",
+		}
+
+	input :=
+		semantics.EvidenceContext{
+			Previous: &previousTurn,
+		}
 
 	got :=
 		actor.findSupersededObservation(
 			candidate,
+			input,
 		)
 
 	if got != "" {

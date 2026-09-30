@@ -5,26 +5,39 @@ import type { Env } from '../config/env.js';
 
 export interface SendVerificationCodeInput {
   email: string;
-  displayName: string;
+
+  displayName: string | null;
+
   code: string;
+
   expiresAt: Date;
 }
 
 export interface SendPasswordResetCodeInput {
   email: string;
-  displayName: string;
+
+  displayName: string | null;
+
   code: string;
+
   expiresAt: Date;
 }
 
 interface SendCodeEmailInput {
   email: string;
-  displayName: string;
+
+  displayName: string | null;
+
   code: string;
+
   expiresAt: Date;
+
   subject: string;
+
   heading: string;
+
   description: string;
+
   ignoreText: string;
 }
 
@@ -78,8 +91,11 @@ export class AuthEmailService {
       this.logger.log(
         [
           input.subject,
+
           `email=${input.email}`,
+
           `code=${input.code}`,
+
           `expiresAt=${input.expiresAt.toISOString()}`,
         ].join(' '),
       );
@@ -133,6 +149,10 @@ export class AuthEmailService {
   }
 
   private codeEmailHtml(input: SendCodeEmailInput): string {
+    const greeting = input.displayName?.trim()
+      ? `Hello ${input.displayName.trim()},`
+      : 'Hello,';
+
     return `
       <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px;">
         <h2 style="margin-bottom:16px;">
@@ -140,7 +160,7 @@ export class AuthEmailService {
         </h2>
 
         <p>
-          Hi ${this.escapeHtml(input.displayName)},
+          ${this.escapeHtml(greeting)}
         </p>
 
         <p>

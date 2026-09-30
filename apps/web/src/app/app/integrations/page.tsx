@@ -1,10 +1,8 @@
-import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
+import { IntegrationsView } from "@/features/integrations/IntegrationsView";
 
 export default function IntegrationsPage() {
-  return (
-    <PagePlaceholder
-      title="Integrations"
-      description="Manage Jira and future workspace integrations."
-    />
-  );
+  return <IntegrationsView />;
 }
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Integrations" };

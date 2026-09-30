@@ -63,6 +63,10 @@ export class MeetingsService {
     return meeting;
   }
 
+  async listForWorkspace(workspaceId: string): Promise<Meeting[]> {
+    return this.meetingsRepository.findByWorkspaceId(workspaceId);
+  }
+
   async bindWorkspace(
     meetingId: string,
     workspaceId: string,

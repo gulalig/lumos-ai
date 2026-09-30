@@ -32,6 +32,8 @@ type EvidenceContext struct {
 	Previous *evidence.Turn
 
 	Current evidence.Turn
+	// Grounded semantic state supplied by the actor, never the model.
+	PreviousCommitment *Observation
 }
 
 func NewEvidenceContext(
@@ -395,6 +397,9 @@ func (c EvidenceContext) GroundingText() string {
 func containsExplicitDueDateAnswer(
 	text string,
 ) bool {
+	if _, ok := DeadlineAnswer(text); ok {
+		return true
+	}
 	normalized :=
 		strings.ToLower(
 			strings.TrimSpace(
@@ -445,6 +450,27 @@ func containsExplicitDueDateAnswer(
 			if normalized == value {
 				return true
 			}
+		}
+
+		// Natural clarification answers such as:
+		//
+		// "The final review can be completed on Friday."
+		// "We can finish it by Friday."
+		// "Let's have it done on Friday."
+		//
+		// This path is only used when the actor already has
+		// exactly one commitment with an owner and no due date,
+		// so accepting a grounded weekday phrase here remains
+		// bounded to the unresolved due-date clarification.
+		if strings.Contains(
+			normalized,
+			"on "+weekday,
+		) ||
+			strings.Contains(
+				normalized,
+				"by "+weekday,
+			) {
+			return true
 		}
 	}
 

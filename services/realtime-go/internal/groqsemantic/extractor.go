@@ -376,9 +376,16 @@ func buildContextPrompt(
 		)
 	}
 
-	return fmt.Sprintf(
+	priorState := ""
+	if input.PreviousCommitment != nil {
+		priorState = fmt.Sprintf("Grounded open commitment: id=%s; owner=%s; summary=%s; dueText=%s\n",
+			input.PreviousCommitment.ID, input.PreviousCommitment.Owner,
+			input.PreviousCommitment.Summary, input.PreviousCommitment.DueText)
+	}
+	return priorState + fmt.Sprintf(
 		"Speaker identity: %s\n"+
-			"Previous adjacent final transcript evidence "+
+			"Previous speaker identity: %s\n"+
+			"Previous eligible final transcript evidence "+
 			"(context only):\n%s\n\n"+
 			"Current final transcript evidence:\n%s\n\n"+
 			"Use the previous turn only to resolve whether "+
@@ -387,6 +394,7 @@ func buildContextPrompt(
 			"turn unless the current turn materially adds "+
 			"new grounded information.",
 		input.Current.ParticipantID,
+		input.Previous.ParticipantID,
 		input.Previous.Text,
 		input.Current.Text,
 	)

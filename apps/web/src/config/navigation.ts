@@ -5,6 +5,7 @@ import {
   IntegrationInstructionsOutlined,
   ListAltOutlined,
   MeetingRoomOutlined,
+  PlayCircleOutlineRounded,
   SettingsOutlined,
   TimelineOutlined,
   WorkspacesOutlined,
@@ -25,6 +26,11 @@ export const CLIENT_NAVIGATION: NavigationItem[] = [
     icon: DashboardOutlined,
   },
   {
+    label: "Demo",
+    href: ROUTES.app.demo,
+    icon: PlayCircleOutlineRounded,
+  },
+  {
     label: "Meetings",
     href: ROUTES.app.meetings,
     icon: MeetingRoomOutlined,
@@ -38,16 +44,6 @@ export const CLIENT_NAVIGATION: NavigationItem[] = [
     label: "Activity",
     href: ROUTES.app.activity,
     icon: TimelineOutlined,
-  },
-  {
-    label: "Integrations",
-    href: ROUTES.app.integrations,
-    icon: IntegrationInstructionsOutlined,
-  },
-  {
-    label: "Settings",
-    href: ROUTES.app.settings,
-    icon: SettingsOutlined,
   },
 ];
 

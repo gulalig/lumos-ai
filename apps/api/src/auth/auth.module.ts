@@ -20,10 +20,13 @@ import { AuthRefreshSessionsRepository } from './auth-refresh-sessions.repositor
 import { RefreshCookieService } from './refresh-cookie.service.js';
 import { RefreshTokenService } from './refresh-token.service.js';
 import { RolesGuard } from './roles.guard.js';
+import { RateLimitModule } from '../rate-limit/rate-limit.module.js';
 
 @Module({
   imports: [
     IdentityModule,
+
+    RateLimitModule,
 
     PassportModule.register({
       defaultStrategy: 'jwt',

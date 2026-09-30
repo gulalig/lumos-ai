@@ -21,15 +21,26 @@ export interface MeetingSnapshotItem {
   confidence: number;
 }
 
+export interface MeetingTranscriptItem {
+  id: string;
+
+  participantId: string;
+
+  text: string;
+
+  capturedAt: string;
+
+  turnOrder: number;
+}
+
 export interface MeetingSnapshot {
   meetingId: string;
 
-  status:
-    | 'created'
-    | 'active'
-    | 'ended';
+  status: 'created' | 'active' | 'ended';
 
   version: number;
+
+  transcript: MeetingTranscriptItem[];
 
   decisions: MeetingSnapshotItem[];
   commitments: MeetingSnapshotItem[];

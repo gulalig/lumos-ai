@@ -14,31 +14,71 @@ import type { AuthPrincipal } from '../auth/auth-principal.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 
+import { InterventionHistoryService } from '../interventions/intervention-history.service.js';
+
+import { UsageControlService } from '../usage/usage-control.service.js';
+
 import { MeetingSnapshotService } from './meeting-snapshot.service.js';
 import { MeetingsService } from './meetings.service.js';
 
 import type { MeetingSnapshot } from './meeting-snapshot.types.js';
 
 import type { CreateMeetingResult, Meeting } from './meeting.types.js';
-import { InterventionHistoryService } from '../interventions/intervention-history.service.js';
+import { RateLimit } from '../rate-limit/rate-limit.decorator.js';
+import { RateLimitGuard } from '../rate-limit/rate-limit.guard.js';
 
 @Controller('meetings')
 export class MeetingsController {
-  constructor(
+  public constructor(
     private readonly meetingsService: MeetingsService,
 
     private readonly snapshotService: MeetingSnapshotService,
+
     private readonly interventionHistory: InterventionHistoryService,
+
+    private readonly usage: UsageControlService,
   ) {}
 
   @Post()
-  async createMeeting(): Promise<CreateMeetingResult> {
-    return this.meetingsService.create();
+  @UseGuards(JwtAuthGuard, RateLimitGuard)
+  @RateLimit({
+    namespace: 'meeting-create',
+
+    scope: 'user',
+
+    limit: 20,
+
+    windowSeconds: 60,
+  })
+  public async createMeeting(
+    @CurrentUser()
+    principal: AuthPrincipal,
+  ): Promise<CreateMeetingResult> {
+    const workspaceId = this.requireWorkspaceId(principal);
+
+    await this.usage.assertMeetingCreationAllowed(workspaceId);
+
+    const meeting = await this.meetingsService.create();
+
+    await this.meetingsService.bindWorkspace(meeting.meetingId, workspaceId);
+
+    return meeting;
+  }
+
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  async listMeetings(
+    @CurrentUser()
+    principal: AuthPrincipal,
+  ): Promise<Meeting[]> {
+    const workspaceId = this.requireWorkspaceId(principal);
+
+    return this.meetingsService.listForWorkspace(workspaceId);
   }
 
   @Get(':meetingId')
   @UseGuards(JwtAuthGuard)
-  async getMeeting(
+  public async getMeeting(
     @CurrentUser()
     principal: AuthPrincipal,
 
@@ -57,7 +97,7 @@ export class MeetingsController {
 
   @Get(':meetingId/snapshot')
   @UseGuards(JwtAuthGuard)
-  async getMeetingSnapshot(
+  public async getMeetingSnapshot(
     @CurrentUser()
     principal: AuthPrincipal,
 
@@ -77,7 +117,7 @@ export class MeetingsController {
   @Post(':meetingId/end')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async endMeeting(
+  public async endMeeting(
     @CurrentUser()
     principal: AuthPrincipal,
 
@@ -96,17 +136,9 @@ export class MeetingsController {
     return this.meetingsService.end(meetingId);
   }
 
-  private requireWorkspaceId(principal: AuthPrincipal): string {
-    if (!principal.workspaceId) {
-      throw new BadRequestException('Workspace membership is required');
-    }
-
-    return principal.workspaceId;
-  }
-
   @Get(':meetingId/interventions')
   @UseGuards(JwtAuthGuard)
-  async getMeetingInterventions(
+  public async getMeetingInterventions(
     @CurrentUser()
     principal: AuthPrincipal,
 
@@ -123,5 +155,13 @@ export class MeetingsController {
     await this.meetingsService.getByIdForWorkspace(meetingId, workspaceId);
 
     return this.interventionHistory.listByMeeting(meetingId);
+  }
+
+  private requireWorkspaceId(principal: AuthPrincipal): string {
+    if (!principal.workspaceId) {
+      throw new BadRequestException('Workspace membership is required');
+    }
+
+    return principal.workspaceId;
   }
 }

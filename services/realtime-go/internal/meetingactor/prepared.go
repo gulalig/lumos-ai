@@ -15,6 +15,11 @@ type PreparedEvidence struct {
 	Turn evidence.Turn
 
 	Observations []semantics.Observation
+
+	LatestCommitmentTurn *evidence.Turn
+
+	LatestCommitmentObservation *semantics.Observation
+	OpenCommitments             []CommitmentContext
 }
 
 func (a *Actor) PrepareEvidence(
@@ -104,38 +109,46 @@ func (a *Actor) PrepareEvidence(
 			turn,
 		)
 
-	// Normal semantic context deliberately remains narrow.
-	//
-	// If normal adjacency is no longer available because Lumos
-	// spoke between the two participant turns, we selectively
-	// reopen context only for the exact unresolved field.
-	if !input.HasPrevious() {
-		switch {
-		case a.hasSingleOwnerlessCommitment():
-			input =
-				semantics.NewOwnershipRefinementContext(
-					a.previousTurn,
-					turn,
-				)
+	if !input.HasPrevious() && a.hasSingleOwnerlessCommitment() {
+		input = semantics.NewOwnershipRefinementContext(a.previousTurn, turn)
+	}
 
-		case a.hasSingleCommitmentMissingDueDate():
-			input =
-				semantics.NewDueDateRefinementContext(
-					a.previousTurn,
-					turn,
-				)
-		}
+	// Select from open semantic lineages, independent of conversational turns,
+	// speaker switches, or the new track/session used for each demo WAV.
+	dueCommitment := a.singleMissingDueCommitment(turn)
+	continuity := a.responsibilityContinuity(turn)
+	if dueCommitment != nil {
+		input = contextForCommitment(dueCommitment, turn)
+	} else if continuity != nil {
+		input = contextForCommitment(continuity, turn)
+	} else if _, shortAnswer := semantics.DeadlineAnswer(turn.Text); shortAnswer {
+		input = semantics.EvidenceContext{Current: turn}
+	}
+	if input.PreviousCommitment == nil {
+		input.PreviousCommitment = a.commitmentObservationForInput(input)
 	}
 
 	extractionStarted :=
 		time.Now()
 
-	candidates, err :=
-		semantics.ExtractWithContext(
-			ctx,
-			a.extractor,
-			input,
-		)
+	if err := ctx.Err(); err != nil {
+		return PreparedEvidence{}, err
+	}
+	var candidates []semantics.Candidate
+	var err error
+	// Literal deadline answers with one target are deterministic field patches.
+	// No model round trip is needed before resolving the intervention.
+	if due, shortAnswer := semantics.DeadlineAnswer(turn.Text); shortAnswer {
+		if dueCommitment != nil {
+			previous := dueCommitment.Observation
+			candidates = []semantics.Candidate{{Kind: semantics.KindCommitment, Summary: previous.Summary,
+				Owner: previous.Owner, DueText: due, Explicit: true, RefinesPrevious: true, Confidence: previous.Confidence}}
+		}
+		// A deadline alone cannot create an action, including when no
+		// eligible target exists or multiple commitments make it ambiguous.
+	} else {
+		candidates, err = semantics.ExtractWithContext(ctx, a.extractor, input)
+	}
 
 	extractionDuration :=
 		time.Since(
@@ -183,6 +196,9 @@ func (a *Actor) PrepareEvidence(
 		)
 
 	for _, candidate := range candidates {
+		if continuity != nil && candidate.Kind == semantics.KindCommitment && candidate.Explicit {
+			candidate.RefinesPrevious = true
+		}
 
 		observation, ok, err :=
 			a.buildObservation(
@@ -239,6 +255,33 @@ func (a *Actor) PrepareEvidence(
 		)
 	}
 
+	latestCommitmentTurn :=
+		a.latestCommitmentTurn
+
+	latestCommitmentObservation :=
+		a.latestCommitmentObservation
+
+	for _, observation := range observations {
+
+		if observation.Kind !=
+			semantics.KindCommitment {
+
+			continue
+		}
+
+		turnCopy :=
+			turn
+
+		observationCopy :=
+			observation
+
+		latestCommitmentTurn =
+			&turnCopy
+
+		latestCommitmentObservation =
+			&observationCopy
+	}
+
 	return PreparedEvidence{
 		Turn: turn,
 
@@ -246,31 +289,57 @@ func (a *Actor) PrepareEvidence(
 			[]semantics.Observation(nil),
 			observations...,
 		),
+
+		LatestCommitmentTurn: latestCommitmentTurn,
+
+		LatestCommitmentObservation: latestCommitmentObservation,
+		OpenCommitments:             a.nextOpenCommitments(turn, observations),
 	}, nil
 }
 
 func (p PreparedEvidence) ContextCheckpoint(
 	evidenceStreamID string,
 ) ContextCheckpoint {
-	return ContextCheckpoint{
-		SchemaVersion: ContextCheckpointSchemaVersion,
+	checkpoint :=
+		ContextCheckpoint{
+			SchemaVersion: ContextCheckpointSchemaVersion,
 
-		MeetingID: p.Turn.MeetingID,
+			MeetingID: p.Turn.MeetingID,
 
-		EvidenceStreamID: evidenceStreamID,
+			EvidenceStreamID: evidenceStreamID,
 
-		Turn: p.Turn,
+			Turn: p.Turn,
 
-		Observations: append(
-			[]semantics.Observation(nil),
-			p.Observations...,
-		),
+			Observations: append(
+				[]semantics.Observation(nil),
+				p.Observations...,
+			),
+		}
+
+	if p.LatestCommitmentTurn != nil {
+		turnCopy :=
+			*p.LatestCommitmentTurn
+
+		checkpoint.LatestCommitmentTurn =
+			&turnCopy
 	}
+
+	if p.LatestCommitmentObservation != nil {
+		observationCopy :=
+			*p.LatestCommitmentObservation
+
+		checkpoint.LatestCommitmentObservation =
+			&observationCopy
+	}
+
+	checkpoint.OpenCommitments = append([]CommitmentContext{}, p.OpenCommitments...)
+	return checkpoint
 }
 
 func (a *Actor) commitPrepared(
 	prepared PreparedEvidence,
 ) {
+	a.openCommitments = append([]CommitmentContext{}, prepared.OpenCommitments...)
 	turnCopy :=
 		prepared.Turn
 
@@ -282,6 +351,22 @@ func (a *Actor) commitPrepared(
 			[]semantics.Observation(nil),
 			prepared.Observations...,
 		)
+
+	if prepared.LatestCommitmentTurn != nil {
+		turnCopy :=
+			*prepared.LatestCommitmentTurn
+
+		a.latestCommitmentTurn =
+			&turnCopy
+	}
+
+	if prepared.LatestCommitmentObservation != nil {
+		observationCopy :=
+			*prepared.LatestCommitmentObservation
+
+		a.latestCommitmentObservation =
+			&observationCopy
+	}
 }
 
 func (a *Actor) hasSingleCommitmentMissingDueDate() bool {
@@ -310,5 +395,33 @@ func (a *Actor) hasSingleCommitmentMissingDueDate() bool {
 
 	return strings.TrimSpace(
 		previous.DueText,
+	) == ""
+}
+
+func (a *Actor) hasLatestCommitmentMissingDueDate() bool {
+	if a.latestCommitmentTurn == nil ||
+		a.latestCommitmentObservation == nil {
+
+		return false
+	}
+
+	commitment :=
+		a.latestCommitmentObservation
+
+	if commitment.Kind !=
+		semantics.KindCommitment {
+
+		return false
+	}
+
+	if strings.TrimSpace(
+		commitment.Owner,
+	) == "" {
+
+		return false
+	}
+
+	return strings.TrimSpace(
+		commitment.DueText,
 	) == ""
 }

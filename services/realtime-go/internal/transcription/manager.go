@@ -20,6 +20,7 @@ import (
 	"lumos/realtime-go/internal/assemblyai"
 	"lumos/realtime-go/internal/evidence"
 	"lumos/realtime-go/internal/observability"
+	"lumos/realtime-go/internal/speechfloor"
 )
 
 const (
@@ -36,12 +37,14 @@ type trackState struct {
 }
 
 type Manager struct {
-	ctx       context.Context
-	meetingID string
-	assembly  *assemblyai.Client
-	evidence  *evidence.Dispatcher
-	logger    *slog.Logger
-	metrics   *observability.Metrics
+	ctx        context.Context
+	meetingID  string
+	assembly   *assemblyai.Client
+	evidence   *evidence.Dispatcher
+	logger     *slog.Logger
+	metrics    *observability.Metrics
+	floor      *speechfloor.Floor
+	floorReply func(string, string, bool) error
 
 	mu     sync.Mutex
 	tracks map[string]*trackState
@@ -241,6 +244,9 @@ func (m *Manager) runTrack(
 ) {
 	trackID :=
 		publication.SID()
+	if m.floor != nil {
+		defer m.floor.End(trackID)
+	}
 
 	participantIdentity :=
 		participant.Identity()
@@ -299,6 +305,9 @@ func (m *Manager) runTrack(
 					)
 
 					return
+				}
+				if m.floor != nil {
+					m.floor.End(trackID)
 				}
 
 				speechStartedMu.Lock()
@@ -385,6 +394,9 @@ func (m *Manager) runTrack(
 			func(
 				started assemblyai.SpeechStarted,
 			) {
+				if m.floor != nil {
+					m.floor.Activity(trackID)
+				}
 				speechStartedMu.Lock()
 
 				speechStarted =
@@ -561,6 +573,7 @@ func (m *Manager) runTrack(
 				&decoder,
 				decodeBuffer,
 				chunker,
+				m.observePCM(trackID),
 			); err != nil {
 
 			m.logger.Error(
@@ -587,6 +600,7 @@ func (m *Manager) runTrack(
 			&decoder,
 			decodeBuffer,
 			chunker,
+			m.observePCM(trackID),
 		); err != nil {
 
 		m.logger.Warn(
@@ -606,6 +620,7 @@ func drainSamples(
 	decoder *opus.Decoder,
 	decodeBuffer []int16,
 	chunker *pcmChunker,
+	observe ...func([]int16),
 ) error {
 	for {
 		sample :=
@@ -644,6 +659,9 @@ func drainSamples(
 			)
 		}
 
+		if len(observe) > 0 && observe[0] != nil {
+			observe[0](decodeBuffer[:totalSamples])
+		}
 		if err :=
 			chunker.Write(
 				decodeBuffer[:totalSamples],

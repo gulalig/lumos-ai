@@ -1,15 +1,15 @@
 import { z } from "zod";
 
 export const signupSchema = z.object({
-  displayName: z
-    .string()
-    .trim()
-    .min(2, "Name is required")
-    .max(100, "Name is too long"),
-
   email: z.string().trim().email("Enter a valid email address"),
 
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: z.string().min(10, "Password must be at least 10 characters"),
+
+  acceptedTerms: z.boolean().refine((value) => value, {
+    message: "You must accept the Terms of Service and Privacy Policy",
+  }),
+
+  newsletterOptIn: z.boolean(),
 });
 
 export const loginSchema = z.object({
@@ -40,12 +40,13 @@ export const resetPasswordSchema = z
       .trim()
       .regex(/^\d{6}$/, "Enter the 6-digit code"),
 
-    newPassword: z.string().min(8, "Password must be at least 8 characters"),
+    newPassword: z.string().min(10, "Password must be at least 10 characters"),
 
     confirmPassword: z.string(),
   })
   .refine((values) => values.newPassword === values.confirmPassword, {
     message: "Passwords do not match",
+
     path: ["confirmPassword"],
   });
 

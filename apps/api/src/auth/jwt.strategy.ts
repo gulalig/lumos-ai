@@ -53,6 +53,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 
         workspaceId: null,
 
+        workspaceName: null,
+
         role: null,
       };
     }
@@ -75,6 +77,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       workspaceMemberId: member.id,
 
       workspaceId: member.workspaceId,
+
+      workspaceName: member.workspace.name,
 
       role: member.role,
     };

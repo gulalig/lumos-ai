@@ -2,6 +2,7 @@ import type { WorkspaceMemberRole } from '../identity/entities/workspace-member.
 
 export interface AccessTokenPayload {
   sub: string;
+
   workspaceMemberId: string | null;
 }
 
@@ -10,11 +11,13 @@ export interface AuthPrincipal {
 
   email: string;
 
-  displayName: string;
+  displayName: string | null;
 
   workspaceMemberId: string | null;
 
   workspaceId: string | null;
+
+  workspaceName: string | null;
 
   role: WorkspaceMemberRole | null;
 }

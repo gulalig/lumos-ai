@@ -14,14 +14,11 @@ func TestActorPreservesOwnerWhenDueDateRefinesCommitment(
 	t.Parallel()
 
 	const (
-		meetingID =
-			"meeting-1"
+		meetingID = "meeting-1"
 
-		participantID =
-			"member:33333333-3333-4333-8333-333333333333"
+		participantID = "member:33333333-3333-4333-8333-333333333333"
 
-		trackID =
-			"track-1"
+		trackID = "track-1"
 	)
 
 	baseTime :=
@@ -29,99 +26,71 @@ func TestActorPreservesOwnerWhenDueDateRefinesCommitment(
 
 	previousTurn :=
 		evidence.Turn{
-			SchemaVersion:
-				evidence.SchemaVersion,
+			SchemaVersion: evidence.SchemaVersion,
 
-			EventID:
-				"event-owner",
+			EventID: "event-owner",
 
-			MeetingID:
-				meetingID,
+			MeetingID: meetingID,
 
-			ParticipantID:
-				participantID,
+			ParticipantID: participantID,
 
-			TrackID:
-				trackID,
+			TrackID: trackID,
 
-			TurnOrder:
-				1,
+			TurnOrder: 1,
 
-			Text:
-				"Lumos developer will ship the pricing page.",
+			Text: "Lumos developer will ship the pricing page.",
 
-			CapturedAt:
-				baseTime,
+			CapturedAt: baseTime,
 		}
 
 	currentTurn :=
 		evidence.Turn{
-			SchemaVersion:
-				evidence.SchemaVersion,
+			SchemaVersion: evidence.SchemaVersion,
 
-			EventID:
-				"event-due",
+			EventID: "event-due",
 
-			MeetingID:
-				meetingID,
+			MeetingID: meetingID,
 
-			ParticipantID:
-				participantID,
+			ParticipantID: participantID,
 
-			TrackID:
-				trackID,
+			TrackID: trackID,
 
-			TurnOrder:
-				2,
+			TurnOrder: 2,
 
-			Text:
-				"On Friday.",
+			Text: "On Friday.",
 
-			CapturedAt:
-				baseTime.Add(
-					10 * time.Second,
-				),
+			CapturedAt: baseTime.Add(
+				10 * time.Second,
+			),
 		}
 
 	actor :=
 		&Actor{
-			meetingID:
-				meetingID,
+			meetingID: meetingID,
 
-			previousTurn:
-				&previousTurn,
+			previousTurn: &previousTurn,
 
-			previousObservations:
-				[]semantics.Observation{
-					{
-						ID:
-							"observation-owner",
+			previousObservations: []semantics.Observation{
+				{
+					ID: "observation-owner",
 
-						Kind:
-							semantics.KindCommitment,
+					Kind: semantics.KindCommitment,
 
-						EvidenceEventID:
-							previousTurn.EventID,
+					EvidenceEventID: previousTurn.EventID,
 
-						EvidenceText:
-							previousTurn.Text,
+					EvidenceText: previousTurn.Text,
 
-						Summary:
-							"Lumos developer will ship the pricing page.",
+					Summary: "Lumos developer will ship the pricing page.",
 
-						Owner:
-							"Lumos developer",
+					Owner: "Lumos developer",
 
-						DueText:
-							"",
+					DueText: "",
 
-						Explicit:
-							true,
+					Explicit: true,
 
-						Confidence:
-							1,
-					},
+					Confidence: 1,
 				},
+			},
 		}
 
 	input :=
@@ -138,26 +107,19 @@ func TestActorPreservesOwnerWhenDueDateRefinesCommitment(
 
 	candidate :=
 		semantics.Candidate{
-			Kind:
-				semantics.KindCommitment,
+			Kind: semantics.KindCommitment,
 
-			Summary:
-				"Lumos developer will ship the pricing page by Friday.",
+			Summary: "Lumos developer will ship the pricing page by Friday.",
 
-			Owner:
-				"",
+			Owner: "",
 
-			DueText:
-				"Friday",
+			DueText: "Friday",
 
-			Explicit:
-				true,
+			Explicit: true,
 
-			RefinesPrevious:
-				true,
+			RefinesPrevious: true,
 
-			Confidence:
-				1,
+			Confidence: 1,
 		}
 
 	observation,
@@ -217,62 +179,101 @@ func TestActorPreservesDueDateWhenOwnerRefinesCommitment(
 ) {
 	t.Parallel()
 
+	previousTurn :=
+		evidence.Turn{
+			SchemaVersion: evidence.SchemaVersion,
+
+			EventID: "event-previous",
+
+			MeetingID: "meeting-1",
+
+			ParticipantID: "participant-alex",
+
+			TrackID: "track-1",
+
+			TurnOrder: 1,
+
+			Text: "We need to ship the pricing page by Friday.",
+
+			CapturedAt: time.Now().UTC(),
+		}
+
+	currentTurn :=
+		evidence.Turn{
+			SchemaVersion: evidence.SchemaVersion,
+
+			EventID: "event-current",
+
+			MeetingID: "meeting-1",
+
+			ParticipantID: "participant-alex",
+
+			TrackID: "track-1",
+
+			TurnOrder: 2,
+
+			Text: "Lumos developer will ship the pricing page.",
+
+			CapturedAt: previousTurn.CapturedAt.Add(
+				time.Second,
+			),
+		}
+
 	actor :=
 		&Actor{
-			previousObservations:
-				[]semantics.Observation{
-					{
-						ID:
-							"observation-previous",
+			previousTurn: &previousTurn,
 
-						Kind:
-							semantics.KindCommitment,
+			previousObservations: []semantics.Observation{
+				{
+					ID: "observation-previous",
 
-						Summary:
-							"We need to ship the pricing page by Friday.",
+					Kind: semantics.KindCommitment,
 
-						Owner:
-							"",
+					EvidenceEventID: previousTurn.EventID,
 
-						DueText:
-							"by Friday",
+					EvidenceText: previousTurn.Text,
 
-						Explicit:
-							true,
+					Summary: "We need to ship the pricing page by Friday.",
 
-						Confidence:
-							1,
-					},
+					Owner: "",
+
+					DueText: "by Friday",
+
+					Explicit: true,
+
+					Confidence: 1,
 				},
+			},
+		}
+
+	input :=
+		semantics.EvidenceContext{
+			Previous: &previousTurn,
+
+			Current: currentTurn,
 		}
 
 	candidate :=
 		semantics.Candidate{
-			Kind:
-				semantics.KindCommitment,
+			Kind: semantics.KindCommitment,
 
-			Summary:
-				"Lumos developer will ship the pricing page.",
+			Summary: "Lumos developer will ship the pricing page.",
 
-			Owner:
-				"Lumos developer",
+			Owner: "Lumos developer",
 
-			DueText:
-				"",
+			DueText: "",
 
-			Explicit:
-				true,
+			Explicit: true,
 
-			RefinesPrevious:
-				true,
+			RefinesPrevious: true,
 
-			Confidence:
-				1,
+			Confidence: 1,
 		}
 
 	result :=
 		actor.preserveCommitmentRefinementFields(
 			candidate,
+			input,
 		)
 
 	if result.Owner !=

@@ -1,10 +1,8 @@
-import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
+import { AdminUsersView } from "@/features/admin/AdminUsersView";
 
 export default function AdminUsersPage() {
-  return (
-    <PagePlaceholder
-      title="Users"
-      description="Review Lumos users and account state."
-    />
-  );
+  return <AdminUsersView />;
 }
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Admin users" };

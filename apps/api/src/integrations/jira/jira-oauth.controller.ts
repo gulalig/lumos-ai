@@ -10,6 +10,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { z } from 'zod';
+import { ConfigService } from '@nestjs/config';
+import type { Env } from '../../config/env.js';
+import { jiraBrowserRedirect } from '../../config/production.js';
 
 import type { AuthPrincipal } from '../../auth/auth-principal.js';
 import { CurrentUser } from '../../auth/current-user.decorator.js';
@@ -27,20 +30,6 @@ export type JiraSetupState =
   | 'site_selection_required'
   | 'project_selection_required'
   | 'connected';
-
-export type AtlassianOAuthCallbackResult =
-  | {
-      workspaceId: string;
-      status: 'authorized';
-      cloudId: string;
-      siteName: string;
-      siteUrl: string;
-    }
-  | {
-      workspaceId: string;
-      status: 'site_selection_required';
-      siteCount: number;
-    };
 
 const selectSiteSchema = z.object({
   cloudId: z.string().min(1),
@@ -64,6 +53,7 @@ export class JiraOAuthController {
     private readonly connections: AtlassianConnectionsService,
 
     private readonly atlassianApi: AtlassianApiService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   @Get('setup')
@@ -135,7 +125,6 @@ export class JiraOAuthController {
   @Get('oauth/authorize')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('owner', 'admin')
-  @Redirect(undefined, HttpStatus.FOUND)
   public async authorize(
     @CurrentUser()
     principal: AuthPrincipal,
@@ -197,6 +186,7 @@ export class JiraOAuthController {
   }
 
   @Get('oauth/callback')
+  @Redirect('', HttpStatus.FOUND)
   public async callback(
     @Query('code')
     code?: string,
@@ -206,7 +196,7 @@ export class JiraOAuthController {
 
     @Query('error')
     oauthError?: string,
-  ): Promise<AtlassianOAuthCallbackResult> {
+  ): Promise<{ url: string }> {
     if (oauthError) {
       throw new BadRequestException(
         `Atlassian authorization failed: ${oauthError}`,
@@ -260,11 +250,9 @@ export class JiraOAuthController {
 
     if (resources.length > 1) {
       return {
-        workspaceId,
-
-        status: 'site_selection_required',
-
-        siteCount: resources.length,
+        url: jiraBrowserRedirect(
+          this.config.get('WEB_ORIGIN', { infer: true }),
+        ),
       };
     }
 
@@ -281,15 +269,7 @@ export class JiraOAuthController {
     });
 
     return {
-      workspaceId,
-
-      status: 'authorized',
-
-      cloudId: resource.id,
-
-      siteName: resource.name,
-
-      siteUrl: resource.url,
+      url: jiraBrowserRedirect(this.config.get('WEB_ORIGIN', { infer: true })),
     };
   }
 

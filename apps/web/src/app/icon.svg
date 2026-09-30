@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="280 350 694 530"
+     role="img"
+     aria-labelledby="title desc">
+  <title id="title">Lumos logo icon</title>
+  <desc id="desc">A warm orange Lumos symbol made of a circle and three rounded rays.</desc>
+
+  <defs>
+    <linearGradient id="lumosGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F29F3D"/>
+      <stop offset="55%" stop-color="#F9AE4C"/>
+      <stop offset="100%" stop-color="#FFC15C"/>
+    </linearGradient>
+  </defs>
+
+  <!-- top ray -->
+  <rect
+    x="592"
+    y="387"
+    width="70"
+    height="180"
+    rx="35"
+    fill="url(#lumosGradient)"
+  />
+
+  <!-- left ray -->
+  <rect
+    x="354"
+    y="495.5"
+    width="70"
+    height="176.8"
+    rx="35"
+    fill="url(#lumosGradient)"
+    transform="rotate(-45 389 583.9)"
+  />
+
+  <!-- right ray -->
+  <rect
+    x="829.75"
+    y="490.35"
+    width="70"
+    height="176.8"
+    rx="35"
+    fill="url(#lumosGradient)"
+    transform="rotate(45 864.75 578.75)"
+  />
+
+  <!-- center -->
+  <circle
+    cx="627"
+    cy="727"
+    r="114"
+    fill="url(#lumosGradient)"
+  />
+</svg>

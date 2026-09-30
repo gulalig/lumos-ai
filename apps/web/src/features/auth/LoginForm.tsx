@@ -1,7 +1,17 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Alert, Button, TextField, Typography } from "@mui/material";
+import { useState } from "react";
+import {
+  Alert,
+  Button,
+  IconButton,
+  InputAdornment,
+  TextField,
+  Typography,
+} from "@mui/material";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 
@@ -17,6 +27,8 @@ import { useLoginMutation } from "@/store/api/auth.api";
 
 export function LoginForm() {
   const router = useRouter();
+
+  const [showPassword, setShowPassword] = useState(false);
 
   const [login, { isLoading, error }] = useLoginMutation();
 
@@ -34,11 +46,15 @@ export function LoginForm() {
   });
 
   const onSubmit = async (values: LoginFormValues) => {
-    const result = await login(values).unwrap();
+    try {
+      const result = await login(values).unwrap();
 
-    router.replace(
-      result.workspace ? ROUTES.app.dashboard : ROUTES.onboarding.workspace,
-    );
+      router.replace(
+        result.workspace ? ROUTES.app.dashboard : ROUTES.onboarding.workspace,
+      );
+    } catch {
+      // The mutation error is rendered by the form.
+    }
   };
 
   return (
@@ -70,10 +86,34 @@ export function LoginForm() {
 
         <TextField
           label="Password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           autoComplete="current-password"
           error={Boolean(errors.password)}
           helperText={errors.password?.message}
+          slotProps={{
+            input: {
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    type="button"
+                    edge="end"
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                    onClick={() => {
+                      setShowPassword((current) => !current);
+                    }}
+                  >
+                    {showPassword ? (
+                      <VisibilityOffOutlinedIcon />
+                    ) : (
+                      <VisibilityOutlinedIcon />
+                    )}
+                  </IconButton>
+                </InputAdornment>
+              ),
+            },
+          }}
           {...register("password")}
         />
 

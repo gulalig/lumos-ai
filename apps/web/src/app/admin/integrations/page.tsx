@@ -1,10 +1,8 @@
-import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
+import { AdminIntegrationsView } from "@/features/admin/AdminIntegrationsView";
 
 export default function AdminIntegrationsPage() {
-  return (
-    <PagePlaceholder
-      title="Integration Health"
-      description="Monitor Jira connections and synchronization health."
-    />
-  );
+  return <AdminIntegrationsView />;
 }
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Admin integrations" };

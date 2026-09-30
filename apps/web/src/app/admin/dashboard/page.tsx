@@ -1,10 +1,8 @@
-import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
+import { AdminOverview } from "@/features/admin/AdminOverview";
 
 export default function AdminDashboardPage() {
-  return (
-    <PagePlaceholder
-      title="Admin Overview"
-      description="Internal Lumos operations overview."
-    />
-  );
+  return <AdminOverview />;
 }
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Admin" };

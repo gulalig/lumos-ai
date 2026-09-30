@@ -26,6 +26,10 @@ type Actor struct {
 	// evidence event has been successfully processed.
 	previousTurn         *evidence.Turn
 	previousObservations []semantics.Observation
+
+	latestCommitmentTurn        *evidence.Turn
+	latestCommitmentObservation *semantics.Observation
+	openCommitments             []CommitmentContext
 }
 
 func New(
@@ -123,6 +127,7 @@ func (a *Actor) buildObservation(
 		candidate =
 			a.preserveCommitmentRefinementFields(
 				candidate,
+				input,
 			)
 
 		candidate =
@@ -135,6 +140,7 @@ func (a *Actor) buildObservation(
 		supersedesID :=
 			a.findSupersededObservation(
 				candidate,
+				input,
 			)
 
 		if supersedesID == "" {
@@ -151,9 +157,43 @@ func (a *Actor) buildObservation(
 				)
 		}
 
+		candidateForGrounding :=
+			candidate
+
+		if candidate.Kind ==
+			semantics.KindCommitment {
+
+			previous :=
+				a.commitmentObservationForInput(
+					input,
+				)
+
+			if previous != nil {
+				previousOwner :=
+					strings.TrimSpace(
+						previous.Owner,
+					)
+
+				candidateOwner :=
+					strings.TrimSpace(
+						candidate.Owner,
+					)
+
+				if previousOwner != "" &&
+					strings.EqualFold(
+						previousOwner,
+						candidateOwner,
+					) {
+
+					candidateForGrounding.Owner =
+						""
+				}
+			}
+		}
+
 		if err :=
 			semantics.ValidateGroundingForSpeaker(
-				candidate,
+				candidateForGrounding,
 				input.GroundingText(),
 				input.Current.ParticipantID,
 			); err != nil {
@@ -220,6 +260,7 @@ func (a *Actor) buildObservation(
 
 func (a *Actor) preserveCommitmentRefinementFields(
 	candidate semantics.Candidate,
+	input semantics.EvidenceContext,
 ) semantics.Candidate {
 	if !candidate.RefinesPrevious ||
 		candidate.Kind !=
@@ -228,28 +269,10 @@ func (a *Actor) preserveCommitmentRefinementFields(
 		return candidate
 	}
 
-	var previous *semantics.Observation
-
-	for index := range a.previousObservations {
-
-		observation :=
-			&a.previousObservations[index]
-
-		if observation.Kind !=
-			semantics.KindCommitment {
-
-			continue
-		}
-
-		// We only preserve fields when exactly one previous
-		// commitment can be selected deterministically.
-		if previous != nil {
-			return candidate
-		}
-
-		previous =
-			observation
-	}
+	previous :=
+		a.commitmentObservationForInput(
+			input,
+		)
 
 	if previous == nil {
 		return candidate
@@ -306,7 +329,55 @@ func (a *Actor) hasSingleOwnerlessCommitment() bool {
 
 func (a *Actor) findSupersededObservation(
 	candidate semantics.Candidate,
+	input semantics.EvidenceContext,
 ) string {
+	if candidate.Kind ==
+		semantics.KindCommitment {
+
+		previous :=
+			a.commitmentObservationForInput(
+				input,
+			)
+
+		if previous == nil {
+			return ""
+		}
+
+		previousOwner :=
+			strings.TrimSpace(
+				previous.Owner,
+			)
+
+		candidateOwner :=
+			strings.TrimSpace(
+				candidate.Owner,
+			)
+
+		// Existing ownership must not disappear.
+		if previousOwner != "" &&
+			candidateOwner == "" {
+
+			return ""
+		}
+
+		// Existing ownership may only change when it looks
+		// like a narrow transcription correction.
+		if previousOwner != "" &&
+			!strings.EqualFold(
+				previousOwner,
+				candidateOwner,
+			) &&
+			!likelyOwnerTranscriptionCorrection(
+				previousOwner,
+				candidateOwner,
+			) {
+
+			return ""
+		}
+
+		return previous.ID
+	}
+
 	matches :=
 		make(
 			[]semantics.Observation,
@@ -323,50 +394,13 @@ func (a *Actor) findSupersededObservation(
 		}
 
 		switch candidate.Kind {
-		case semantics.KindCommitment:
-			previousOwner :=
-				strings.TrimSpace(
-					previous.Owner,
-				)
-
-			candidateOwner :=
-				strings.TrimSpace(
-					candidate.Owner,
-				)
-
-			// Existing ownership must not disappear.
-			if previousOwner != "" &&
-				candidateOwner == "" {
-
-				continue
-			}
-
-			// Missing ownership may be completed later.
-			//
-			// Existing ownership may only change when the
-			// difference looks like a narrow STT correction.
-			if previousOwner != "" &&
-				!strings.EqualFold(
-					previousOwner,
-					candidateOwner,
-				) &&
-				!likelyOwnerTranscriptionCorrection(
-					previousOwner,
-					candidateOwner,
-				) {
-
-				continue
-			}
-
 		case semantics.KindDecision:
-			// A previous turn may contain multiple
-			// decisions. We only accept a revision
-			// when exactly one deterministic match
-			// survives this filter.
+			// A previous turn may contain multiple decisions.
+			// Only one deterministic match may be revised.
 
 		default:
-			// Revision semantics for proposal/question
-			// are intentionally not enabled yet.
+			// Proposal/question revision semantics are not
+			// enabled here.
 			continue
 		}
 
@@ -539,6 +573,23 @@ func (a *Actor) ContextCheckpoint(
 			*a.previousTurn
 	}
 
+	if a.latestCommitmentTurn != nil {
+		turnCopy :=
+			*a.latestCommitmentTurn
+
+		checkpoint.LatestCommitmentTurn =
+			&turnCopy
+	}
+
+	if a.latestCommitmentObservation != nil {
+		observationCopy :=
+			*a.latestCommitmentObservation
+
+		checkpoint.LatestCommitmentObservation =
+			&observationCopy
+	}
+
+	checkpoint.OpenCommitments = append([]CommitmentContext{}, a.commitmentContexts()...)
 	return checkpoint
 }
 
@@ -572,6 +623,26 @@ func (a *Actor) RestoreContext(
 			[]semantics.Observation(nil),
 			checkpoint.Observations...,
 		)
+	a.openCommitments = nil
+	if checkpoint.OpenCommitments != nil {
+		a.openCommitments = append([]CommitmentContext{}, checkpoint.OpenCommitments...)
+	}
+
+	if checkpoint.LatestCommitmentTurn != nil {
+		turnCopy :=
+			*checkpoint.LatestCommitmentTurn
+
+		a.latestCommitmentTurn =
+			&turnCopy
+	}
+
+	if checkpoint.LatestCommitmentObservation != nil {
+		observationCopy :=
+			*checkpoint.LatestCommitmentObservation
+
+		a.latestCommitmentObservation =
+			&observationCopy
+	}
 
 	a.logger.Info(
 		"meeting actor context restored",
@@ -588,4 +659,68 @@ func (a *Actor) RestoreContext(
 	)
 
 	return nil
+}
+
+func (a *Actor) commitmentObservationForInput(
+	input semantics.EvidenceContext,
+) *semantics.Observation {
+	if input.PreviousCommitment != nil {
+		return input.PreviousCommitment
+	}
+	if input.Previous == nil {
+		return nil
+	}
+
+	previousEventID :=
+		input.Previous.EventID
+
+	var match *semantics.Observation
+
+	for index := range a.previousObservations {
+		observation :=
+			&a.previousObservations[index]
+
+		if observation.Kind !=
+			semantics.KindCommitment {
+
+			continue
+		}
+
+		if observation.EvidenceEventID !=
+			previousEventID {
+
+			continue
+		}
+
+		if match != nil {
+			return nil
+		}
+
+		match =
+			observation
+	}
+
+	if match != nil {
+		return match
+	}
+
+	if a.latestCommitmentTurn == nil ||
+		a.latestCommitmentObservation == nil {
+
+		return nil
+	}
+
+	if a.latestCommitmentTurn.EventID !=
+		previousEventID {
+
+		return nil
+	}
+
+	if a.latestCommitmentObservation.Kind !=
+		semantics.KindCommitment {
+
+		return nil
+	}
+
+	return a.latestCommitmentObservation
 }

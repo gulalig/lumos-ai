@@ -916,3 +916,57 @@ func TestOwnershipRefinementContextRejectsSameParticipantUnrelatedStatement(
 		)
 	}
 }
+
+func TestDueDateRefinementContextAcceptsNaturalWeekdaySentence(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	now :=
+		time.Now().
+			UTC()
+
+	previous :=
+		evidence.Turn{
+			EventID: "event-previous",
+
+			MeetingID: "meeting-1",
+
+			ParticipantID: "demo:maya",
+
+			TrackID: "track-maya",
+
+			Text: "I can take ownership of the final review.",
+
+			CapturedAt: now,
+		}
+
+	current :=
+		evidence.Turn{
+			EventID: "event-current",
+
+			MeetingID: "meeting-1",
+
+			ParticipantID: "member:user-1",
+
+			TrackID: "track-user",
+
+			Text: "The final review can be completed on Friday.",
+
+			CapturedAt: now.Add(
+				10 * time.Second,
+			),
+		}
+
+	context :=
+		NewDueDateRefinementContext(
+			&previous,
+			current,
+		)
+
+	if !context.HasPrevious() {
+		t.Fatal(
+			"expected natural due-date answer to receive refinement context",
+		)
+	}
+}

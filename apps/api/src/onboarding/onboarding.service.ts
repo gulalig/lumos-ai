@@ -17,6 +17,17 @@ export interface CompleteWorkspaceOnboardingInput {
   userId: string;
   refreshToken: string;
   workspaceName: string;
+  industry: string;
+  companySize: string;
+  website: string | null;
+}
+
+export interface CompleteWorkflowOnboardingInput {
+  workspaceId: string;
+  workspaceMemberId: string;
+  jobTitle: string;
+  teamName: string;
+  primaryUseCase: string;
 }
 
 @Injectable()
@@ -77,6 +88,12 @@ export class OnboardingService {
           name,
 
           slug: this.createSlug(name, workspaceId),
+
+          industry: input.industry.trim(),
+
+          companySize: input.companySize.trim(),
+
+          website: input.website?.trim() || null,
         },
         manager,
       );
@@ -141,6 +158,44 @@ export class OnboardingService {
 
         role: result.membership.role,
       },
+    };
+  }
+
+  public async completeWorkflow(input: CompleteWorkflowOnboardingInput) {
+    const jobTitle = input.jobTitle.trim();
+
+    const teamName = input.teamName.trim();
+
+    const primaryUseCase = input.primaryUseCase.trim();
+
+    if (!jobTitle || !teamName || !primaryUseCase) {
+      throw new ConflictException(
+        'Job title, team and primary use case are required',
+      );
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      await this.workspaceMembers.updateProfile(
+        input.workspaceMemberId,
+        {
+          jobTitle,
+
+          teamName,
+        },
+        manager,
+      );
+
+      await this.workspaces.updateProfile(
+        input.workspaceId,
+        {
+          primaryUseCase,
+        },
+        manager,
+      );
+    });
+
+    return {
+      status: 'completed' as const,
     };
   }
 

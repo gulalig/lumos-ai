@@ -21,6 +21,15 @@ import { OnboardingService } from './onboarding.service.js';
 
 interface CreateWorkspaceBody {
   name: string;
+  industry: string;
+  companySize: string;
+  website?: string;
+}
+
+interface CompleteWorkflowBody {
+  jobTitle: string;
+  teamName: string;
+  primaryUseCase: string;
 }
 
 @Controller('auth/onboarding')
@@ -67,6 +76,12 @@ export class OnboardingController {
       refreshToken,
 
       workspaceName: body.name,
+
+      industry: body.industry,
+
+      companySize: body.companySize,
+
+      website: body.website ?? null,
     });
 
     this.refreshCookies.set(reply, result.refreshToken);
@@ -80,5 +95,33 @@ export class OnboardingController {
     } = result;
 
     return response;
+  }
+
+  @Post('workflow')
+  @HttpCode(HttpStatus.OK)
+  public async completeWorkflow(
+    @CurrentUser()
+    principal: AuthPrincipal,
+
+    @Body()
+    body: CompleteWorkflowBody,
+  ) {
+    if (!principal.workspaceId || !principal.workspaceMemberId) {
+      throw new BadRequestException(
+        'Workspace onboarding must be completed first',
+      );
+    }
+
+    return this.onboarding.completeWorkflow({
+      workspaceId: principal.workspaceId,
+
+      workspaceMemberId: principal.workspaceMemberId,
+
+      jobTitle: body.jobTitle,
+
+      teamName: body.teamName,
+
+      primaryUseCase: body.primaryUseCase,
+    });
   }
 }

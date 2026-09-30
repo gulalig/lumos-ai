@@ -17,17 +17,35 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Lumos",
-    template: "%s | Lumos",
+    default: "Lumos AI",
+    template: "%s | Lumos AI",
   },
 
   description:
-    "Lumos turns meetings into clear commitments, ownership, and execution.",
+    "Lumos is a real-time meeting intelligence assistant that captures commitments and context and turns them into execution.",
+  applicationName: "Lumos AI",
+  openGraph: {
+    type: "website",
+    siteName: "Lumos AI",
+    title: "Lumos AI",
+    description:
+      "Lumos is a real-time meeting intelligence assistant that captures commitments and context and turns them into execution.",
+  },
+  twitter: {
+    card: "summary",
+    title: "Lumos AI",
+    description:
+      "Lumos is a real-time meeting intelligence assistant that captures commitments and context and turns them into execution.",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html
+      lang="en"
+      data-scroll-behavior="smooth"
+      className={`${geistSans.variable} ${geistMono.variable}`}
+    >
       <body>
         <AppRouterCacheProvider>
           <Providers>{children}</Providers>

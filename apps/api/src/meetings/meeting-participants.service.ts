@@ -7,14 +7,16 @@ import { MeetingParticipantsRepository } from './meeting-participants.repository
 
 @Injectable()
 export class MeetingParticipantsService {
-  constructor(
+  public constructor(
     private readonly participantsRepository: MeetingParticipantsRepository,
   ) {}
 
-  async ensureMember(
+  public async ensureMember(
     meetingId: string,
     identity: ResolvedMemberIdentity,
   ): Promise<MeetingParticipantEntity> {
+    const displayName = identity.displayName?.trim() || identity.email;
+
     const participant = await this.participantsRepository.ensureMember({
       meetingId,
 
@@ -22,7 +24,7 @@ export class MeetingParticipantsService {
 
       workspaceMemberId: identity.workspaceMemberId,
 
-      displayName: identity.displayName,
+      displayName,
 
       livekitIdentity: identity.livekitIdentity,
     });

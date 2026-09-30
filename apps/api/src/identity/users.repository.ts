@@ -6,9 +6,16 @@ import { UserEntity } from './entities/user.entity.js';
 
 export interface CreateUserInput {
   id: string;
+
   email: string;
-  displayName: string;
+
+  displayName: string | null;
+
   passwordHash: string;
+
+  termsAcceptedAt: Date;
+
+  newsletterOptIn: boolean;
 }
 
 @Injectable()
@@ -66,11 +73,15 @@ export class UsersRepository {
 
       email: input.email.trim().toLowerCase(),
 
-      displayName: input.displayName.trim(),
+      displayName: input.displayName?.trim() ?? null,
 
       passwordHash: input.passwordHash,
 
       emailVerifiedAt: null,
+
+      termsAcceptedAt: input.termsAcceptedAt,
+
+      newsletterOptIn: input.newsletterOptIn,
     });
 
     return repository.save(user);

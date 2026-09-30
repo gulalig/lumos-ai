@@ -43,9 +43,35 @@ func ResolveSpeakerOwner(
 		return candidate
 	}
 
-	switch normalizeEvidence(
-		candidate.Owner,
-	) {
+	normalizedOwner :=
+		normalizeEvidence(
+			candidate.Owner,
+		)
+
+	// Demo participants use trusted LiveKit identities such as
+	// "demo:maya" and "demo:alex".
+	//
+	// The semantic model may naturally return "Maya" or "Alex"
+	// as the owner even when the evidence is first-person speech.
+	//
+	// Treat the suffix of the trusted speaker identity as an alias
+	// for that same speaker.
+	speakerAlias := ""
+
+	if separator :=
+		strings.LastIndex(
+			speakerIdentity,
+			":",
+		); separator >= 0 &&
+		separator+1 < len(speakerIdentity) {
+
+		speakerAlias =
+			normalizeEvidence(
+				speakerIdentity[separator+1:],
+			)
+	}
+
+	switch normalizedOwner {
 	case "",
 		"i",
 		"me",
@@ -55,6 +81,14 @@ func ResolveSpeakerOwner(
 
 		candidate.Owner =
 			speakerIdentity
+
+	default:
+		if speakerAlias != "" &&
+			normalizedOwner == speakerAlias {
+
+			candidate.Owner =
+				speakerIdentity
+		}
 	}
 
 	return candidate

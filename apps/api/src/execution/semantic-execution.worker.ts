@@ -17,6 +17,7 @@ import {
 } from '../semantics/semantic-observation.js';
 
 import { ExecutionService } from './execution.service.js';
+import { resolveDueDate } from './resolve-due-date.js';
 
 const POLL_INTERVAL_MS = 750;
 const READ_BATCH_SIZE = 100;
@@ -243,9 +244,11 @@ export class SemanticExecutionWorker implements OnModuleInit, OnModuleDestroy {
         ? owner.slice(ownerPrefix.length)
         : null;
 
+      const semanticOwnerKnown = owner.trim().length > 0;
+
       const referenceTime = this.streamTime(streamId);
 
-      const dueAt = this.resolveDueDate(observation.dueText, referenceTime);
+      const dueAt = resolveDueDate(observation.dueText, referenceTime);
 
       // IMPORTANT:
       //
@@ -276,7 +279,7 @@ export class SemanticExecutionWorker implements OnModuleInit, OnModuleDestroy {
 
       const resolvedDueAt = sprintItem.dueAt;
 
-      if (resolvedOwnerWorkspaceMemberId) {
+      if (resolvedOwnerWorkspaceMemberId || semanticOwnerKnown) {
         await this.interventionPublisher.resolveGap(
           meetingId,
           sprintItem.id,
@@ -301,6 +304,10 @@ export class SemanticExecutionWorker implements OnModuleInit, OnModuleDestroy {
         sprintItemId: sprintItem.id,
         observation,
         ownerWorkspaceMemberId: resolvedOwnerWorkspaceMemberId,
+
+        ownerKnown:
+          Boolean(resolvedOwnerWorkspaceMemberId) || semanticOwnerKnown,
+
         dueAt: resolvedDueAt,
         createdAt: referenceTime,
       });
@@ -348,59 +355,6 @@ export class SemanticExecutionWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     return new Date(value);
-  }
-
-  private resolveDueDate(
-    dueText: string | undefined,
-    referenceTime: Date,
-  ): Date | null {
-    const normalized = dueText?.trim().toLowerCase();
-
-    if (!normalized) {
-      return null;
-    }
-
-    const weekdayMatch = normalized.match(
-      /\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/,
-    );
-
-    if (!weekdayMatch) {
-      return null;
-    }
-
-    const weekday = weekdayMatch[1];
-
-    const weekdayByName: Record<string, number> = {
-      sunday: 0,
-      monday: 1,
-      tuesday: 2,
-      wednesday: 3,
-      thursday: 4,
-      friday: 5,
-      saturday: 6,
-    };
-
-    const targetWeekday = weekdayByName[weekday];
-
-    if (targetWeekday === undefined) {
-      return null;
-    }
-
-    const due = new Date(referenceTime);
-
-    const currentWeekday = due.getUTCDay();
-
-    let daysAhead = (targetWeekday - currentWeekday + 7) % 7;
-
-    if (daysAhead === 0) {
-      daysAhead = 7;
-    }
-
-    due.setUTCDate(due.getUTCDate() + daysAhead);
-
-    due.setUTCHours(23, 59, 59, 999);
-
-    return due;
   }
 
   private executionCursorKey(meetingId: string): string {

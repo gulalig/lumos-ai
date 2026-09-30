@@ -19,7 +19,24 @@ import { MeetingsService } from './meetings.service.js';
 import type {
   MeetingSnapshot,
   MeetingSnapshotItem,
+  MeetingTranscriptItem,
 } from './meeting-snapshot.types.js';
+
+const EVIDENCE_EVENT_TYPE = 'evidence.turn.final';
+
+interface EvidenceTurnPayload {
+  eventId: string;
+
+  meetingId: string;
+
+  participantId: string;
+
+  turnOrder: number;
+
+  text: string;
+
+  capturedAt: string;
+}
 
 @Injectable()
 export class MeetingSnapshotService {
@@ -40,9 +57,15 @@ export class MeetingSnapshotService {
       workspaceId,
     );
 
-    const streamKey = semanticStreamKey(meetingId);
+    const semanticKey = semanticStreamKey(meetingId);
 
-    const entries = await this.redis.client.xrange(streamKey, '-', '+');
+    const evidenceKey = this.evidenceStreamKey(meetingId);
+
+    const [semanticEntries, evidenceEntries] = await Promise.all([
+      this.redis.client.xrange(semanticKey, '-', '+'),
+
+      this.redis.client.xrange(evidenceKey, '-', '+'),
+    ]);
 
     const applied = new Set<string>();
 
@@ -53,6 +76,8 @@ export class MeetingSnapshotService {
 
       version: 0,
 
+      transcript: [],
+
       decisions: [],
 
       commitments: [],
@@ -62,7 +87,43 @@ export class MeetingSnapshotService {
       questions: [],
     };
 
-    for (const entry of entries) {
+    for (const entry of evidenceEntries) {
+      const [streamId, fields] = entry;
+
+      const values = redisFieldsToRecord(fields);
+
+      if (values.event_type !== EVIDENCE_EVENT_TYPE) {
+        continue;
+      }
+
+      const payload = values.payload;
+
+      if (!payload) {
+        continue;
+      }
+
+      const turn = this.parseEvidenceTurn(
+        meetingId,
+        streamId,
+        payload,
+      );
+
+      const transcriptItem: MeetingTranscriptItem = {
+        id: turn.eventId,
+
+        participantId: turn.participantId,
+
+        text: turn.text,
+
+        capturedAt: turn.capturedAt,
+
+        turnOrder: turn.turnOrder,
+      };
+
+      snapshot.transcript.push(transcriptItem);
+    }
+
+    for (const entry of semanticEntries) {
       const [streamId, fields] = entry;
 
       const values = redisFieldsToRecord(fields);
@@ -90,7 +151,11 @@ export class MeetingSnapshotService {
         );
       }
 
-      const observation = this.parseObservation(meetingId, streamId, payload);
+      const observation = this.parseObservation(
+        meetingId,
+        streamId,
+        payload,
+      );
 
       if (observation.kind === 'unknown') {
         continue;
@@ -103,7 +168,10 @@ export class MeetingSnapshotService {
       applied.add(observation.id);
 
       if (observation.supersedesObservationId) {
-        this.removeObservation(snapshot, observation.supersedesObservationId);
+        this.removeObservation(
+          snapshot,
+          observation.supersedesObservationId,
+        );
       }
 
       const item: MeetingSnapshotItem = {
@@ -147,7 +215,61 @@ export class MeetingSnapshotService {
       snapshot.version += 1;
     }
 
+    snapshot.transcript.sort(
+      (left, right) =>
+        new Date(left.capturedAt).getTime() -
+        new Date(right.capturedAt).getTime(),
+    );
+
     return snapshot;
+  }
+
+  private evidenceStreamKey(
+    meetingId: string,
+  ): string {
+    return `lumos:meeting:{${meetingId}}:evidence`;
+  }
+
+  private parseEvidenceTurn(
+    meetingId: string,
+    streamId: string,
+    payload: string,
+  ): EvidenceTurnPayload {
+    try {
+      const parsed =
+        JSON.parse(payload) as Partial<EvidenceTurnPayload>;
+
+      if (
+        typeof parsed.eventId !== 'string' ||
+        parsed.meetingId !== meetingId ||
+        typeof parsed.participantId !== 'string' ||
+        typeof parsed.turnOrder !== 'number' ||
+        typeof parsed.text !== 'string' ||
+        typeof parsed.capturedAt !== 'string'
+      ) {
+        throw new Error(
+          'Invalid evidence payload',
+        );
+      }
+
+      return parsed as EvidenceTurnPayload;
+    } catch (error) {
+      this.logger.error(
+        [
+          'Invalid meeting evidence turn',
+          `meetingId=${meetingId}`,
+          `streamId=${streamId}`,
+        ].join(' '),
+
+        error instanceof Error
+          ? error.stack
+          : undefined,
+      );
+
+      throw new InternalServerErrorException(
+        'Meeting evidence history contains an invalid turn',
+      );
+    }
   }
 
   private parseObservation(
@@ -158,7 +280,9 @@ export class MeetingSnapshotService {
     try {
       const parsed = JSON.parse(payload);
 
-      return semanticObservationSchema.parse(parsed);
+      return semanticObservationSchema.parse(
+        parsed,
+      );
     } catch (error) {
       this.logger.error(
         [
@@ -166,7 +290,10 @@ export class MeetingSnapshotService {
           `meetingId=${meetingId}`,
           `streamId=${streamId}`,
         ].join(' '),
-        error instanceof Error ? error.stack : undefined,
+
+        error instanceof Error
+          ? error.stack
+          : undefined,
       );
 
       throw new InternalServerErrorException(
@@ -179,20 +306,28 @@ export class MeetingSnapshotService {
     snapshot: MeetingSnapshot,
     observationId: string,
   ): void {
-    snapshot.decisions = snapshot.decisions.filter(
-      (item) => item.id !== observationId,
-    );
+    snapshot.decisions =
+      snapshot.decisions.filter(
+        (item) =>
+          item.id !== observationId,
+      );
 
-    snapshot.commitments = snapshot.commitments.filter(
-      (item) => item.id !== observationId,
-    );
+    snapshot.commitments =
+      snapshot.commitments.filter(
+        (item) =>
+          item.id !== observationId,
+      );
 
-    snapshot.proposals = snapshot.proposals.filter(
-      (item) => item.id !== observationId,
-    );
+    snapshot.proposals =
+      snapshot.proposals.filter(
+        (item) =>
+          item.id !== observationId,
+      );
 
-    snapshot.questions = snapshot.questions.filter(
-      (item) => item.id !== observationId,
-    );
+    snapshot.questions =
+      snapshot.questions.filter(
+        (item) =>
+          item.id !== observationId,
+      );
   }
 }

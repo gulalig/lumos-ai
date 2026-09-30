@@ -116,6 +116,12 @@ describe('OnboardingService', () => {
       refreshToken: 'old-refresh-token',
 
       workspaceName: 'Lumos Team',
+
+      industry: 'Software',
+
+      companySize: '11-50',
+
+      website: 'https://lumos.example',
     });
 
     expect(fixture.users.findByIdForUpdate).toHaveBeenCalledWith(
@@ -131,6 +137,9 @@ describe('OnboardingService', () => {
     expect(fixture.workspaces.create).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Lumos Team',
+        industry: 'Software',
+        companySize: '11-50',
+        website: 'https://lumos.example',
       }),
       fixture.manager,
     );
@@ -193,6 +202,12 @@ describe('OnboardingService', () => {
         refreshToken: 'refresh-token',
 
         workspaceName: 'Another Workspace',
+
+        industry: 'Software',
+
+        companySize: '11-50',
+
+        website: null,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
 
@@ -211,6 +226,12 @@ describe('OnboardingService', () => {
         refreshToken: 'refresh-token',
 
         workspaceName: '   ',
+
+        industry: 'Software',
+
+        companySize: '11-50',
+
+        website: null,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
 

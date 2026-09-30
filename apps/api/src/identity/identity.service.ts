@@ -4,15 +4,19 @@ import { WorkspaceMembersRepository } from './workspace-members.repository.js';
 
 export interface ResolvedMemberIdentity {
   workspaceMemberId: string;
+
   workspaceId: string;
+
   userId: string;
 
-  displayName: string;
+  displayName: string | null;
+
   email: string;
 
   role: 'owner' | 'admin' | 'member';
 
   jobTitle: string | null;
+
   teamName: string | null;
 
   livekitIdentity: string;
@@ -20,9 +24,11 @@ export interface ResolvedMemberIdentity {
 
 @Injectable()
 export class IdentityService {
-  constructor(private readonly workspaceMembers: WorkspaceMembersRepository) {}
+  public constructor(
+    private readonly workspaceMembers: WorkspaceMembersRepository,
+  ) {}
 
-  async resolveMember(
+  public async resolveMember(
     workspaceMemberId: string,
   ): Promise<ResolvedMemberIdentity> {
     const member = await this.workspaceMembers.findById(workspaceMemberId);
@@ -35,7 +41,9 @@ export class IdentityService {
 
     return {
       workspaceMemberId: member.id,
+
       workspaceId: member.workspaceId,
+
       userId: member.userId,
 
       displayName: member.user.displayName,

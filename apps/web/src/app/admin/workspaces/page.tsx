@@ -1,10 +1,8 @@
-import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
+import { AdminWorkspacesView } from "@/features/admin/AdminWorkspacesView";
 
 export default function AdminWorkspacesPage() {
-  return (
-    <PagePlaceholder
-      title="Workspaces"
-      description="Review customer workspaces and workspace activity."
-    />
-  );
+  return <AdminWorkspacesView />;
 }
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Admin workspaces" };

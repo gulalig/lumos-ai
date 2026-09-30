@@ -1,10 +1,8 @@
-import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
+import { OverviewDashboard } from "@/features/dashboard/OverviewDashboard";
 
 export default function DashboardPage() {
-  return (
-    <PagePlaceholder
-      title="Overview"
-      description="Workspace execution overview and live outcomes."
-    />
-  );
+  return <OverviewDashboard />;
 }
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Overview" };

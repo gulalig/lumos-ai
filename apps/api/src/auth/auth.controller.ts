@@ -17,11 +17,17 @@ import { RefreshCookieService } from './refresh-cookie.service.js';
 import type { AuthPrincipal } from './auth-principal.js';
 import { CurrentUser } from './current-user.decorator.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
+import { RateLimit } from '../rate-limit/rate-limit.decorator.js';
+import { RateLimitGuard } from '../rate-limit/rate-limit.guard.js';
 
 interface SignupBody {
   email: string;
-  displayName: string;
+
   password: string;
+
+  acceptedTerms: boolean;
+
+  newsletterOptIn: boolean;
 }
 
 interface VerifyEmailBody {
@@ -56,17 +62,44 @@ export class AuthController {
   ) {}
 
   @Post('signup')
-  public signup(@Body() body: SignupBody) {
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    namespace: 'auth-signup',
+    scope: 'ip',
+    limit: 5,
+    windowSeconds: 60 * 60,
+  })
+  public signup(
+    @Body()
+    body: SignupBody,
+  ) {
     return this.auth.signup(body);
   }
 
   @Post('verify-email')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    namespace: 'auth-verify-email',
+    scope: 'ip',
+    limit: 10,
+    windowSeconds: 10 * 60,
+  })
   @HttpCode(HttpStatus.OK)
   public verifyEmail(@Body() body: VerifyEmailBody) {
     return this.auth.verifyEmail(body);
   }
 
   @Post('resend-email-verification')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    namespace: 'auth-resend-verification',
+
+    scope: 'ip',
+
+    limit: 3,
+
+    windowSeconds: 15 * 60,
+  })
   @HttpCode(HttpStatus.OK)
   public resendEmailVerification(
     @Body()
@@ -76,6 +109,13 @@ export class AuthController {
   }
 
   @Post('login')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    namespace: 'auth-login',
+    scope: 'ip',
+    limit: 10,
+    windowSeconds: 10 * 60,
+  })
   @HttpCode(HttpStatus.OK)
   public async login(
     @Body() body: LoginBody,
@@ -101,7 +141,16 @@ export class AuthController {
   }
 
   @Post('refresh')
-  @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    namespace: 'auth-refresh',
+
+    scope: 'ip',
+
+    limit: 30,
+
+    windowSeconds: 10 * 60,
+  })
   public async refresh(
     @Req()
     request: FastifyRequest,
@@ -150,6 +199,8 @@ export class AuthController {
 
               workspaceMemberId: principal.workspaceMemberId,
 
+              name: principal.workspaceName,
+
               role: principal.role,
             }
           : null,
@@ -179,6 +230,16 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    namespace: 'auth-forgot-password',
+
+    scope: 'ip',
+
+    limit: 5,
+
+    windowSeconds: 60 * 60,
+  })
   @HttpCode(HttpStatus.OK)
   public forgotPassword(
     @Body()
@@ -188,6 +249,16 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    namespace: 'auth-reset-password',
+
+    scope: 'ip',
+
+    limit: 10,
+
+    windowSeconds: 60 * 60,
+  })
   @HttpCode(HttpStatus.OK)
   public resetPassword(
     @Body()

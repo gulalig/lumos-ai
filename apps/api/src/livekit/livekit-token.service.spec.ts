@@ -11,6 +11,50 @@ import { MeetingsService } from '../meetings/meetings.service.js';
 import { LiveKitTokenService } from './livekit-token.service.js';
 
 describe('LiveKitTokenService', () => {
+  it.each(['alex', 'maya'] as const)(
+    'allows demo %s to send floor requests and receive runtime replies',
+    async (actor) => {
+      const configValues: Record<string, string> = {
+        LIVEKIT_URL: 'wss://example.livekit.cloud',
+        LIVEKIT_API_KEY: 'test-api-key',
+        LIVEKIT_API_SECRET: 'test-api-secret-test-api-secret',
+      };
+      const config = {
+        get: vi.fn((key: string) => configValues[key]),
+      } as unknown as ConfigService<Env, true>;
+      const meetings = {
+        bindWorkspace: vi.fn().mockResolvedValue({
+          id: 'meeting',
+          roomName: 'meeting',
+        }),
+      } as unknown as MeetingsService;
+      const service = new LiveKitTokenService(
+        config,
+        meetings,
+        {} as MeetingParticipantsService,
+      );
+      const details = await service.createDemoActorConnectionDetails(
+        'meeting',
+        'workspace',
+        actor,
+      );
+      const claims = JSON.parse(
+        Buffer.from(
+          details.participantToken.split('.')[1]!,
+          'base64url',
+        ).toString('utf8'),
+      );
+      expect(claims.sub).toBe('demo:' + actor);
+      expect(claims.video).toMatchObject({
+        roomJoin: true,
+        room: 'meeting',
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true,
+      });
+    },
+  );
+
   it('creates a token using the resolved workspace member identity', async () => {
     const meetingId = '90c7bb9d-de11-496f-ab54-beb2fed1f5db';
 

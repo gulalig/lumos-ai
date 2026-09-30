@@ -1,10 +1,8 @@
-import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
+import { MeetingsView } from "@/features/meetings/MeetingsView";
 
 export default function MeetingsPage() {
-  return (
-    <PagePlaceholder
-      title="Meetings"
-      description="Review meetings, outcomes, commitments and interventions."
-    />
-  );
+  return <MeetingsView />;
 }
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Meetings" };

@@ -367,7 +367,7 @@ func main() {
 
 	metricsMux.Handle(
 		"/metrics",
-		metrics.Handler(),
+		observability.ProtectMetrics(metrics.Handler(), cfg.MetricsBearerToken),
 	)
 
 	metricsServer :=

@@ -14,11 +14,7 @@ import { WorkspaceMemberEntity } from '../../identity/entities/workspace-member.
 import { SprintEntity } from './sprint.entity.js';
 
 export type SprintItemStatus =
-  | 'todo'
-  | 'in_progress'
-  | 'blocked'
-  | 'done'
-  | 'cancelled';
+  'todo' | 'in_progress' | 'blocked' | 'done' | 'cancelled';
 
 @Entity({
   name: 'sprint_items',

@@ -1,47 +1,92 @@
 "use client";
 
+import { VisibilityOffOutlined, VisibilityOutlined } from "@mui/icons-material";
+import {
+  Alert,
+  Box,
+  Button,
+  Checkbox,
+  FormControlLabel,
+  FormHelperText,
+  IconButton,
+  InputAdornment,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { styled } from "@mui/material/styles";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Alert, Button, TextField, Typography } from "@mui/material";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { AuthFormCard } from "@/components/forms/AuthFormCard";
 import { FormStack } from "@/components/forms/FormStack";
 import { AppLink } from "@/components/navigation/AppLink";
 import { ROUTES } from "@/constants/routes";
+
 import {
   signupSchema,
   type SignupFormValues,
 } from "@/features/auth/auth.schemas";
+
 import { useSignupMutation } from "@/store/api/auth.api";
+
+const CheckboxGroup = styled(Box)(({ theme }) => ({
+  display: "grid",
+
+  gap: theme.spacing(0.05),
+
+  "& .MuiFormControlLabel-root": {
+    margin: 0,
+  },
+}));
 
 export function SignupForm() {
   const router = useRouter();
+
+  const [showPassword, setShowPassword] = useState(false);
 
   const [signup, { isLoading, error }] = useSignupMutation();
 
   const {
     register,
     handleSubmit,
+
     formState: { errors },
   } = useForm<SignupFormValues>({
     resolver: zodResolver(signupSchema),
 
     defaultValues: {
-      displayName: "",
       email: "",
+
       password: "",
+
+      acceptedTerms: false,
+
+      newsletterOptIn: false,
     },
   });
 
   const onSubmit = async (values: SignupFormValues) => {
-    const result = await signup(values).unwrap();
+    try {
+      const result = await signup({
+        email: values.email,
 
-    const params = new URLSearchParams({
-      email: result.email,
-    });
+        password: values.password,
 
-    router.push(`${ROUTES.auth.verifyEmail}?${params.toString()}`);
+        acceptedTerms: values.acceptedTerms,
+
+        newsletterOptIn: values.newsletterOptIn,
+      }).unwrap();
+
+      const params = new URLSearchParams({
+        email: result.email,
+      });
+
+      router.push(`${ROUTES.auth.verifyEmail}?${params.toString()}`);
+    } catch {
+      // RTK Query exposes the request error through mutation state.
+    }
   };
 
   return (
@@ -61,14 +106,6 @@ export function SignupForm() {
         ) : null}
 
         <TextField
-          label="Name"
-          autoComplete="name"
-          error={Boolean(errors.displayName)}
-          helperText={errors.displayName?.message}
-          {...register("displayName")}
-        />
-
-        <TextField
           label="Email"
           type="email"
           autoComplete="email"
@@ -79,12 +116,65 @@ export function SignupForm() {
 
         <TextField
           label="Password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           autoComplete="new-password"
           error={Boolean(errors.password)}
           helperText={errors.password?.message}
+          slotProps={{
+            input: {
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    type="button"
+                    edge="end"
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                    onClick={() => setShowPassword((current) => !current)}
+                  >
+                    {showPassword ? (
+                      <VisibilityOffOutlined />
+                    ) : (
+                      <VisibilityOutlined />
+                    )}
+                  </IconButton>
+                </InputAdornment>
+              ),
+            },
+          }}
           {...register("password")}
         />
+
+        <CheckboxGroup>
+          <Box>
+            <FormControlLabel
+              control={<Checkbox {...register("acceptedTerms")} />}
+              label={
+                <Typography variant="body2">
+                  I agree to the{" "}
+                  <AppLink href="/terms">Terms of Service</AppLink>
+                  {" and "}
+                  <AppLink href="/privacy">Privacy Policy</AppLink>
+                </Typography>
+              }
+            />
+
+            {errors.acceptedTerms ? (
+              <FormHelperText error>
+                {errors.acceptedTerms.message}
+              </FormHelperText>
+            ) : null}
+          </Box>
+
+          <FormControlLabel
+            control={<Checkbox {...register("newsletterOptIn")} />}
+            label={
+              <Typography variant="body2">
+                Send me product updates, tips and occasional Lumos news
+              </Typography>
+            }
+          />
+        </CheckboxGroup>
 
         <Button type="submit" variant="contained" disabled={isLoading}>
           {isLoading ? "Creating account..." : "Create account"}

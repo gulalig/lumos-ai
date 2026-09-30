@@ -8,6 +8,7 @@ import (
 
 	media "github.com/livekit/media-sdk"
 
+	"lumos/realtime-go/internal/speechfloor"
 	"lumos/realtime-go/internal/tts"
 )
 
@@ -24,6 +25,23 @@ type TTSSpeaker struct {
 	publisher PCMAudioPublisher
 
 	logger *slog.Logger
+	floor  *speechfloor.Floor
+	valid  func(context.Context, Event) error
+}
+
+type preparedTTSSpeech struct {
+	speaker           *TTSSpeaker
+	event             Event
+	frames            []media.PCM16Sample
+	audio             tts.Audio
+	startedAt         time.Time
+	synthesisDuration time.Duration
+	frameDuration     time.Duration
+}
+
+// Coordinate installs the runtime floor and authoritative Redis gap check.
+func (s *TTSSpeaker) Coordinate(floor *speechfloor.Floor, valid func(context.Context, Event) error) {
+	s.floor, s.valid = floor, valid
 }
 
 func NewTTSSpeaker(
@@ -62,12 +80,20 @@ func (
 	ctx context.Context,
 	event Event,
 ) error {
-	if err := ctx.Err(); err != nil {
+	prepared, err := s.Prepare(ctx, event)
+	if err != nil {
 		return err
+	}
+	return prepared.Speak(ctx, event)
+}
+
+func (s *TTSSpeaker) Prepare(ctx context.Context, event Event) (Speaker, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	if err := event.Validate(); err != nil {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"validate intervention before TTS: %w",
 			err,
 		)
@@ -91,7 +117,7 @@ func (
 		)
 
 	if err != nil {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"synthesize intervention speech: %w",
 			err,
 		)
@@ -113,31 +139,62 @@ func (
 		)
 
 	if err != nil {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"convert TTS PCM to LiveKit frames: %w",
 			err,
 		)
 	}
 
 	if len(frames) == 0 {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"TTS produced no LiveKit PCM frames",
 		)
 	}
 
+	return &preparedTTSSpeech{
+		speaker: s, event: event, frames: frames, audio: audio,
+		startedAt: totalStarted, synthesisDuration: synthesisDuration, frameDuration: frameDuration,
+	}, nil
+}
+
+func (p *preparedTTSSpeech) Speak(ctx context.Context, event Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if event.ID != p.event.ID || event.MeetingID != p.event.MeetingID || event.Message != p.event.Message {
+		return fmt.Errorf("prepared speech belongs to another intervention")
+	}
+	s := p.speaker
 	publishStarted :=
 		time.Now()
+
+	// Synthesize first; audio starts only after the room becomes quiet.
+	if s.floor != nil {
+		playbackCtx, release, err := s.floor.Acquire(ctx, func(checkCtx context.Context) error {
+			if s.valid != nil {
+				return s.valid(checkCtx, event)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		defer release()
+		ctx = playbackCtx
+	}
 
 	if err :=
 		s.publisher.Publish(
 			ctx,
-			frames,
+			p.frames,
 		); err != nil {
-
 		return fmt.Errorf(
 			"publish TTS audio to LiveKit: %w",
-			err,
+			speechfloor.CancellationError(ctx, err),
 		)
+	}
+	if err := ctx.Err(); err != nil {
+		return speechfloor.CancellationError(ctx, err)
 	}
 
 	publishDuration :=
@@ -147,7 +204,7 @@ func (
 
 	totalDuration :=
 		time.Since(
-			totalStarted,
+			p.startedAt,
 		)
 
 	s.logger.Info(
@@ -161,21 +218,21 @@ func (
 		"reason",
 		event.Reason,
 		"provider",
-		audio.Provider,
+		p.audio.Provider,
 		"language",
-		audio.Language,
+		p.audio.Language,
 		"voice",
-		audio.Voice,
+		p.audio.Voice,
 		"characters",
-		audio.Characters,
+		p.audio.Characters,
 		"attempts",
-		audio.Attempts,
+		p.audio.Attempts,
 		"frames",
-		len(frames),
+		len(p.frames),
 		"synthesisMs",
-		synthesisDuration.Milliseconds(),
+		p.synthesisDuration.Milliseconds(),
 		"frameMs",
-		frameDuration.Milliseconds(),
+		p.frameDuration.Milliseconds(),
 		"publishAndPlayoutMs",
 		publishDuration.Milliseconds(),
 		"totalMs",

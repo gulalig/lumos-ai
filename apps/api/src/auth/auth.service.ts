@@ -10,23 +10,31 @@ import { DataSource } from 'typeorm';
 import { UsersRepository } from '../identity/users.repository.js';
 import { WorkspaceMembersRepository } from '../identity/workspace-members.repository.js';
 
+import { AccessTokenService } from './access-token.service.js';
 import { AuthEmailService } from './auth-email.service.js';
 import { OtpService } from './otp.service.js';
 import { PasswordService } from './password.service.js';
-import { AccessTokenService } from './access-token.service.js';
 import { RefreshTokenService } from './refresh-token.service.js';
 
 export interface SignupInput {
   email: string;
-  displayName: string;
+
   password: string;
+
+  acceptedTerms: boolean;
+
+  newsletterOptIn: boolean;
 }
 
 export interface SignupResult {
   userId: string;
+
   email: string;
+
   verificationRequired: true;
+
   challengeId: string;
+
   expiresAt: Date;
 }
 
@@ -52,19 +60,31 @@ export class AuthService {
 
   public async login(input: { email: string; password: string }): Promise<{
     accessToken: string;
+
     tokenType: 'Bearer';
+
     expiresInSeconds: number;
+
     user: {
       id: string;
+
       email: string;
-      displayName: string;
+
+      displayName: string | null;
     };
+
     workspace: {
       workspaceMemberId: string;
+
       workspaceId: string;
+
+      name: string;
+
       role: 'owner' | 'admin' | 'member';
     } | null;
+
     refreshToken: string;
+
     refreshTokenExpiresAt: Date;
   }> {
     const email = input.email.trim().toLowerCase();
@@ -123,9 +143,12 @@ export class AuthService {
 
             workspaceId: membership.workspaceId,
 
+            name: membership.workspace.name,
+
             role: membership.role,
           }
         : null,
+
       refreshToken: refresh.refreshToken,
 
       refreshTokenExpiresAt: refresh.expiresAt,
@@ -135,18 +158,18 @@ export class AuthService {
   public async signup(input: SignupInput): Promise<SignupResult> {
     const email = input.email.trim().toLowerCase();
 
-    const displayName = input.displayName.trim();
-
     if (!email) {
       throw new ConflictException('Email is required');
     }
 
-    if (!displayName) {
-      throw new ConflictException('Display name is required');
-    }
-
     if (input.password.length < 10) {
       throw new ConflictException('Password must be at least 10 characters');
+    }
+
+    if (!input.acceptedTerms) {
+      throw new BadRequestException(
+        'Terms of Service and Privacy Policy must be accepted',
+      );
     }
 
     const passwordHash = await this.passwords.hash(input.password);
@@ -166,9 +189,13 @@ export class AuthService {
 
           email,
 
-          displayName,
+          displayName: null,
 
           passwordHash,
+
+          termsAcceptedAt: new Date(),
+
+          newsletterOptIn: input.newsletterOptIn,
         },
         manager,
       );
@@ -196,7 +223,7 @@ export class AuthService {
     await this.email.sendVerificationCode({
       email: created.email,
 
-      displayName,
+      displayName: null,
 
       code: created.otp.code,
 
@@ -216,7 +243,11 @@ export class AuthService {
     };
   }
 
-  public async verifyEmail(input: { email: string; code: string }): Promise<{
+  public async verifyEmail(input: {
+    email: string;
+
+    code: string;
+  }): Promise<{
     verified: true;
   }> {
     const email = input.email.trim().toLowerCase();
@@ -261,6 +292,7 @@ export class AuthService {
 
   public async resendEmailVerification(input: { email: string }): Promise<{
     sent: true;
+
     expiresAt: Date | null;
   }> {
     const email = input.email.trim().toLowerCase();
@@ -270,6 +302,7 @@ export class AuthService {
     if (!user || user.emailVerifiedAt) {
       return {
         sent: true,
+
         expiresAt: null,
       };
     }
@@ -301,9 +334,13 @@ export class AuthService {
 
   public async refresh(refreshToken: string): Promise<{
     accessToken: string;
+
     tokenType: 'Bearer';
+
     expiresInSeconds: number;
+
     refreshToken: string;
+
     refreshTokenExpiresAt: Date;
   }> {
     const rotated = await this.refreshTokens.rotate(refreshToken);
@@ -375,7 +412,9 @@ export class AuthService {
 
   public async resetPassword(input: {
     email: string;
+
     code: string;
+
     newPassword: string;
   }): Promise<{
     passwordReset: true;

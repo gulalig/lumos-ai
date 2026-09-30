@@ -28,6 +28,46 @@ function createJiraSyncOutbox(): JiraSyncOutboxRepository {
 }
 
 describe('ExecutionService', () => {
+  it('rejects a refinement that points to another meeting without updating its item', async () => {
+    const links = {
+      findOne: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({
+        meetingId: 'another-meeting',
+        sprintItemId: 'existing-item',
+      }),
+    };
+    const items = { findOne: vi.fn(), save: vi.fn() };
+    const meetings = {
+      findOne: vi.fn().mockResolvedValue({
+        id: 'current-meeting',
+        workspaceId: 'workspace',
+      }),
+    };
+    const manager = {
+      getRepository: vi.fn((entity: unknown) => {
+        if (entity === ExecutionObservationLinkEntity) return links;
+        if (entity === SprintItemEntity) return items;
+        if (entity === MeetingEntity) return meetings;
+        throw new Error('Unexpected repository access');
+      }),
+    } as unknown as EntityManager;
+    const outbox = createJiraSyncOutbox();
+    const service = new ExecutionService(createDataSource(manager), outbox);
+    await expect(
+      service.applyCommitment({
+        meetingId: 'current-meeting',
+        observationId: 'refined',
+        evidenceEventId: 'answer',
+        supersedesObservationId: 'original',
+        summary: 'Final review',
+        ownerWorkspaceMemberId: null,
+        dueAt: new Date('2026-10-05T23:59:59.999Z'),
+      }),
+    ).rejects.toThrow('Superseded observation belongs to another meeting');
+    expect(items.findOne).not.toHaveBeenCalled();
+    expect(items.save).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
   it('returns the existing sprint item when the same observation is delivered again', async () => {
     const item = new SprintItemEntity();
 

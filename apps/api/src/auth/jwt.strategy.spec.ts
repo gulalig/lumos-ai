@@ -8,6 +8,7 @@ import { UserEntity } from '../identity/entities/user.entity.js';
 import { WorkspaceMemberEntity } from '../identity/entities/workspace-member.entity.js';
 import { UsersRepository } from '../identity/users.repository.js';
 import { WorkspaceMembersRepository } from '../identity/workspace-members.repository.js';
+import { WorkspaceEntity } from '../identity/entities/workspace.entity.js';
 
 import { JwtStrategy } from './jwt.strategy.js';
 
@@ -72,6 +73,8 @@ describe('JwtStrategy', () => {
 
       workspaceId: null,
 
+      workspaceName: null,
+
       role: null,
     });
 
@@ -91,6 +94,14 @@ describe('JwtStrategy', () => {
       emailVerifiedAt: new Date(),
     });
 
+    const workspace = Object.assign(new WorkspaceEntity(), {
+      id: 'workspace-1',
+
+      name: 'Test Workspace',
+
+      slug: 'test-workspace',
+    });
+
     const member = Object.assign(new WorkspaceMemberEntity(), {
       id: 'member-1',
 
@@ -98,7 +109,9 @@ describe('JwtStrategy', () => {
 
       workspaceId: 'workspace-1',
 
-      role: 'admin' as const,
+      role: 'owner' as const,
+
+      workspace,
     });
 
     vi.mocked(fixture.users.findById).mockResolvedValue(user);
@@ -120,9 +133,11 @@ describe('JwtStrategy', () => {
 
       workspaceMemberId: 'member-1',
 
+      workspaceName: 'Test Workspace',
+
       workspaceId: 'workspace-1',
 
-      role: 'admin',
+      role: 'owner',
     });
   });
 

@@ -160,3 +160,57 @@ func TestOwnershipAcceptanceAllowsExactSpeakerIdentity(
 		)
 	}
 }
+
+func TestOwnershipAcceptanceAllowsTakeCareOf(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	candidate := Candidate{
+		Kind:       KindCommitment,
+		Summary:    "Take care of the final review",
+		Owner:      "demo:maya",
+		Explicit:   true,
+		Confidence: 0.95,
+	}
+
+	err := ValidateGroundingForSpeaker(
+		candidate,
+		"I can also take care of the final review.",
+		"demo:maya",
+	)
+
+	if err != nil {
+		t.Fatalf(
+			"expected ownership acceptance to be grounded, got %v",
+			err,
+		)
+	}
+}
+
+func TestOwnershipAcceptanceAllowsTakeOwnershipOf(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	candidate := Candidate{
+		Kind:       KindCommitment,
+		Summary:    "Take ownership of the final check",
+		Owner:      "demo:maya",
+		Explicit:   true,
+		Confidence: 0.95,
+	}
+
+	err := ValidateGroundingForSpeaker(
+		candidate,
+		"I can take ownership of the final check.",
+		"demo:maya",
+	)
+
+	if err != nil {
+		t.Fatalf(
+			"expected take-ownership phrase to be grounded, got %v",
+			err,
+		)
+	}
+}

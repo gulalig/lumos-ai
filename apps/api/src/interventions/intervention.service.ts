@@ -6,14 +6,17 @@ import type { SemanticObservation } from '../semantics/semantic-observation.js';
 
 import type { Intervention, InterventionReason } from './intervention.js';
 
-type EvaluateInput = {
+interface EvaluateInput {
   meetingId: string;
   sprintItemId: string;
   observation: SemanticObservation;
   ownerWorkspaceMemberId: string | null;
+
+  ownerKnown?: boolean;
+
   dueAt: Date | null;
   createdAt?: Date;
-};
+}
 
 @Injectable()
 export class InterventionService {
@@ -23,6 +26,7 @@ export class InterventionService {
       sprintItemId,
       observation,
       ownerWorkspaceMemberId,
+      ownerKnown = Boolean(ownerWorkspaceMemberId),
       dueAt,
       createdAt = new Date(),
     } = input;
@@ -31,7 +35,7 @@ export class InterventionService {
       return [];
     }
 
-    if (!ownerWorkspaceMemberId) {
+    if (!ownerKnown) {
       return [
         this.createIntervention({
           meetingId,

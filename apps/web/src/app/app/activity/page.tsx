@@ -1,10 +1,8 @@
-import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
+import { ActivityView } from "@/features/activity/ActivityView";
 
 export default function ActivityPage() {
-  return (
-    <PagePlaceholder
-      title="Activity"
-      description="Review Lumos execution history and AI activity."
-    />
-  );
+  return <ActivityView />;
 }
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Activity" };

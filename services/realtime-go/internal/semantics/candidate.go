@@ -56,6 +56,11 @@ func (c Candidate) ToContextObservation(
 				input.Current.EventID,
 			}
 	}
+	if input.PreviousCommitment != nil {
+		previous := input.PreviousCommitment
+		supportingEventIDs = append([]string{}, previous.SupportingEvidenceEventIDs...)
+		supportingEventIDs = append(supportingEventIDs, previous.EvidenceEventID, input.Current.EventID)
+	}
 
 	return NewObservationWithContext(
 		c.Kind,

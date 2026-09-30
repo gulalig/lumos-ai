@@ -85,6 +85,9 @@ describe('OnboardingController', () => {
       createPrincipal(),
       {
         name: 'Lumos Team',
+        industry: 'Software',
+        companySize: '11-50',
+        website: 'https://lumos.example',
       },
       fixture.request,
       fixture.reply,
@@ -96,6 +99,12 @@ describe('OnboardingController', () => {
       refreshToken: 'old-refresh-token',
 
       workspaceName: 'Lumos Team',
+
+      industry: 'Software',
+
+      companySize: '11-50',
+
+      website: 'https://lumos.example',
     });
 
     expect(fixture.refreshCookies.set).toHaveBeenCalledWith(
@@ -132,6 +141,8 @@ describe('OnboardingController', () => {
         createPrincipal('workspace-1'),
         {
           name: 'Another Workspace',
+          industry: 'Software',
+          companySize: '11-50',
         },
         fixture.request,
         fixture.reply,
@@ -151,6 +162,8 @@ describe('OnboardingController', () => {
         createPrincipal(),
         {
           name: 'Lumos Team',
+          industry: 'Software',
+          companySize: '11-50',
         },
         fixture.request,
         fixture.reply,

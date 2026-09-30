@@ -1,71 +1,82 @@
-export type MeetingSnapshotStatus =
-  | 'created'
-  | 'active'
-  | 'ended';
-
-export type MeetingSnapshotKind =
-  | 'decision'
-  | 'commitment'
-  | 'proposal'
-  | 'question';
+import { API_CONFIG } from "@/constants/api";
 
 export interface MeetingSnapshotItem {
   id: string;
 
-  kind: MeetingSnapshotKind;
+  kind: "decision" | "commitment" | "proposal" | "question";
 
   evidenceEventId: string;
+
   evidenceText: string;
 
   summary: string;
 
-  owner: string;
-  dueText: string;
+  owner?: string | null;
+
+  dueText?: string | null;
 
   explicit: boolean;
+
   confidence: number;
+}
+
+export interface MeetingTranscriptItem {
+  id: string;
+
+  participantId: string;
+
+  text: string;
+
+  capturedAt: string;
+
+  turnOrder: number;
 }
 
 export interface MeetingSnapshot {
   meetingId: string;
 
-  status: MeetingSnapshotStatus;
+  status: "created" | "active" | "ended";
 
-  version: number;
+  version?: number;
+
+  transcript: MeetingTranscriptItem[];
 
   decisions: MeetingSnapshotItem[];
+
   commitments: MeetingSnapshotItem[];
+
   proposals: MeetingSnapshotItem[];
+
   questions: MeetingSnapshotItem[];
 }
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ??
-  'http://localhost:3001/api/v1';
+const API_BASE_URL = API_CONFIG.baseUrl;
 
 export async function getMeetingSnapshot(
   meetingId: string,
+  accessToken: string,
   signal?: AbortSignal,
 ): Promise<MeetingSnapshot> {
   const response = await fetch(
-    `${API_BASE_URL}/meetings/${encodeURIComponent(meetingId)}/snapshot`,
+    `${API_BASE_URL}/meetings/${meetingId}/snapshot`,
     {
-      method: 'GET',
+      method: "GET",
 
       headers: {
-        Accept: 'application/json',
+        Accept: "application/json",
+
+        Authorization: `Bearer ${accessToken}`,
       },
 
-      cache: 'no-store',
+      cache: "no-store",
+
       signal,
     },
   );
 
   if (!response.ok) {
-    throw new Error(
-      `Failed to load meeting snapshot: ${response.status}`,
-    );
+    throw new Error(`Failed to load meeting snapshot: ${response.status}`);
   }
 
-  return await response.json() as MeetingSnapshot;
+  return (await response.json()) as MeetingSnapshot;
 }

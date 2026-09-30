@@ -11,12 +11,13 @@ export const ROUTES = {
 
   onboarding: {
     workspace: "/onboarding/workspace",
+    workflow: "/onboarding/workflow",
     integration: "/onboarding/integration",
-    project: "/onboarding/project",
   },
 
   app: {
     dashboard: "/app/dashboard",
+    demo: "/app/demo",
     meetings: "/app/meetings",
     sprint: "/app/sprint",
     activity: "/app/activity",
@@ -25,6 +26,7 @@ export const ROUTES = {
   },
 
   admin: {
+    login: "/admin/login",
     dashboard: "/admin/dashboard",
     users: "/admin/users",
     workspaces: "/admin/workspaces",

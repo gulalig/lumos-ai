@@ -404,9 +404,11 @@ func TestActorRefinesAdjacentCommitment(
 		)
 	}
 
-	if extractor.extractContextCalls != 1 {
+	// A literal date answer is now a deterministic patch of the grounded
+	// commitment, so it does not require another model request.
+	if extractor.extractContextCalls != 0 {
 		t.Fatalf(
-			"expected contextual ExtractContext to run once, got %d",
+			"expected deadline refinement without a model request, got %d",
 			extractor.extractContextCalls,
 		)
 	}
@@ -905,6 +907,219 @@ func TestActorDoesNotShareContextForUnrelatedDifferentParticipant(
 	if input.HasPrevious() {
 		t.Fatal(
 			"unrelated cross-speaker turn must not receive previous context",
+		)
+	}
+}
+
+func TestActorRefinesLatestCommitmentWithLaterWeekdayAnswer(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	const meetingID = "meeting-latest-commitment-weekday"
+
+	baseTime :=
+		time.Now().UTC()
+
+	commitmentTurn :=
+		evidence.Turn{
+			SchemaVersion: evidence.SchemaVersion,
+
+			EventID: "event-maya-commitment",
+
+			MeetingID: meetingID,
+
+			ParticipantID: "demo:maya",
+
+			TrackID: "track-maya",
+
+			TurnOrder: 1,
+
+			Text: "I can take ownership of the final check.",
+
+			CapturedAt: baseTime,
+		}
+
+	intermediateTurn :=
+		evidence.Turn{
+			SchemaVersion: evidence.SchemaVersion,
+
+			EventID: "event-user-intermediate",
+
+			MeetingID: meetingID,
+
+			ParticipantID: "member:user",
+
+			TrackID: "track-user",
+
+			TurnOrder: 2,
+
+			Text: "I think Monday could work.",
+
+			CapturedAt: baseTime.Add(
+				5 * time.Second,
+			),
+		}
+
+	currentTurn :=
+		evidence.Turn{
+			SchemaVersion: evidence.SchemaVersion,
+
+			EventID: "event-user-monday",
+
+			MeetingID: meetingID,
+
+			ParticipantID: "member:user",
+
+			TrackID: "track-user",
+
+			TurnOrder: 3,
+
+			Text: "Yeah, on Monday.",
+
+			CapturedAt: baseTime.Add(
+				10 * time.Second,
+			),
+		}
+
+	commitmentObservation :=
+		semantics.Observation{
+			ID: "observation-maya-commitment",
+
+			Kind: semantics.KindCommitment,
+
+			EvidenceEventID: commitmentTurn.EventID,
+
+			EvidenceText: commitmentTurn.Text,
+
+			Summary: "I can take ownership of the final check.",
+
+			Owner: "demo:maya",
+
+			DueText: "",
+
+			Explicit: true,
+
+			Confidence: 1,
+		}
+
+	actor :=
+		&Actor{
+			meetingID: meetingID,
+
+			previousTurn: &intermediateTurn,
+
+			previousObservations: nil,
+
+			latestCommitmentTurn: &commitmentTurn,
+
+			latestCommitmentObservation: &commitmentObservation,
+		}
+
+	input :=
+		semantics.NewEvidenceContext(
+			actor.previousTurn,
+			currentTurn,
+		)
+
+	if !input.HasPrevious() {
+		t.Fatal(
+			"expected normal adjacent input before override",
+		)
+	}
+
+	if actor.hasLatestCommitmentMissingDueDate() {
+		latestDueInput :=
+			semantics.NewDueDateRefinementContext(
+				actor.latestCommitmentTurn,
+				currentTurn,
+			)
+
+		if latestDueInput.HasPrevious() {
+			input =
+				latestDueInput
+		}
+	}
+
+	if input.Previous == nil {
+		t.Fatal(
+			"expected latest commitment refinement context",
+		)
+	}
+
+	if input.Previous.EventID !=
+		commitmentTurn.EventID {
+
+		t.Fatalf(
+			"expected latest commitment event %q, got %q",
+			commitmentTurn.EventID,
+			input.Previous.EventID,
+		)
+	}
+
+	candidate :=
+		semantics.Candidate{
+			Kind: semantics.KindCommitment,
+
+			Summary: "I can take ownership of the final check on Monday.",
+
+			Owner: "",
+
+			DueText: "on Monday",
+
+			Explicit: true,
+
+			RefinesPrevious: true,
+
+			Confidence: 1,
+		}
+
+	observation,
+		ok,
+		err :=
+		actor.buildObservation(
+			candidate,
+			input,
+		)
+
+	if err != nil {
+		t.Fatalf(
+			"build observation: %v",
+			err,
+		)
+	}
+
+	if !ok {
+		t.Fatal(
+			"expected refined commitment observation",
+		)
+	}
+
+	if observation.Owner !=
+		"demo:maya" {
+
+		t.Fatalf(
+			"expected preserved Maya owner, got %q",
+			observation.Owner,
+		)
+	}
+
+	if observation.DueText !=
+		"on Monday" {
+
+		t.Fatalf(
+			"expected Monday due date, got %q",
+			observation.DueText,
+		)
+	}
+
+	if observation.SupersedesObservationID !=
+		commitmentObservation.ID {
+
+		t.Fatalf(
+			"expected supersedes %q, got %q",
+			commitmentObservation.ID,
+			observation.SupersedesObservationID,
 		)
 	}
 }

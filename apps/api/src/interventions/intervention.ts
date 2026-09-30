@@ -1,6 +1,4 @@
-export type InterventionReason =
-  | 'missing_owner'
-  | 'missing_due_date';
+export type InterventionReason = 'missing_owner' | 'missing_due_date';
 
 export type Intervention = {
   id: string;

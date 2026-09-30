@@ -1,116 +1,177 @@
 "use client";
 
-import { Box, Grid, Typography } from "@mui/material";
+import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import type { ReactNode } from "react";
 
 import { LumosLogo } from "@/components/brand/LumosLogo";
 
-const AuthRoot = styled(Grid)(({ theme }) => ({
-  minHeight: "100vh",
-  backgroundColor: theme.palette.background.default,
-}));
-
-const FormPanel = styled(Grid)(({ theme }) => ({
-  minHeight: "100vh",
-  padding: theme.spacing(3),
-
-  [theme.breakpoints.up("sm")]: {
-    padding: theme.spacing(4),
-  },
-
-  [theme.breakpoints.up("lg")]: {
-    padding: theme.spacing(5),
-  },
-}));
-
-const FormPanelContent = styled(Box)({
-  display: "grid",
-  gridTemplateRows: "auto 1fr",
-  width: "100%",
-  height: "100%",
-});
-
-const LogoContainer = styled(Box)({
-  display: "flex",
-  justifyContent: "flex-start",
-  alignItems: "flex-start",
-});
-
-const FormArea = styled(Box)(({ theme }) => ({
-  display: "flex",
-  width: "100%",
-  alignItems: "center",
-  justifyContent: "center",
-  paddingTop: theme.spacing(4),
-  paddingBottom: theme.spacing(4),
-}));
-
-const FormContainer = styled(Box)({
-  width: "100%",
-  maxWidth: 440,
-});
-
-const BrandPanel = styled(Grid)(({ theme }) => ({
-  display: "none",
-  padding: theme.spacing(6),
-  backgroundColor: theme.palette.background.paper,
-
-  [theme.breakpoints.up("md")]: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-}));
-
-const BrandMessage = styled(Box)(({ theme }) => ({
-  display: "grid",
-  width: "100%",
-  maxWidth: 520,
-  gap: theme.spacing(2),
-}));
-
-const BrandHeadline = styled(Typography)(({ theme }) => ({
-  fontWeight: theme.typography.fontWeightBold,
-  letterSpacing: "-0.04em",
-}));
-
-const BrandDescription = styled(Typography)(({ theme }) => ({
-  maxWidth: 460,
-  color: theme.palette.text.secondary,
-}));
-
 interface AuthShellProps {
   children: ReactNode;
 }
 
+const ShellRoot = styled(Box)(({ theme }) => ({
+  display: "grid",
+
+  gridTemplateColumns: "minmax(0, 1fr) minmax(520px, 1fr)",
+
+  minHeight: "100vh",
+
+  backgroundColor: theme.palette.background.paper,
+
+  [theme.breakpoints.down("lg")]: {
+    gridTemplateColumns: "minmax(0, 1fr) 46%",
+  },
+
+  [theme.breakpoints.down("md")]: {
+    gridTemplateColumns: "1fr",
+  },
+}));
+
+const FormSide = styled(Box)(({ theme }) => ({
+  position: "relative",
+
+  display: "flex",
+
+  minWidth: 0,
+
+  minHeight: "100vh",
+
+  alignItems: "center",
+
+  justifyContent: "center",
+
+  backgroundColor: "#F7F7F8",
+
+  padding: theme.spacing(5),
+
+  [theme.breakpoints.down("sm")]: {
+    padding: theme.spacing(3),
+  },
+}));
+
+const FormColumn = styled(Box)(({ theme }) => ({
+  display: "grid",
+
+  width: "100%",
+
+  maxWidth: 440,
+
+  gap: theme.spacing(5.5),
+
+  [theme.breakpoints.down("sm")]: {
+    gap: theme.spacing(4),
+  },
+}));
+
+const BrandArea = styled(Box)({
+  display: "flex",
+
+  alignItems: "center",
+});
+
+const FormContent = styled(Box)({
+  width: "100%",
+});
+
+const VisualSide = styled(Box)(({ theme }) => ({
+  position: "relative",
+
+  overflow: "hidden",
+
+  minWidth: 0,
+
+  minHeight: "100vh",
+
+  isolation: "isolate",
+
+  backgroundColor: "#F7F4EE",
+
+  [theme.breakpoints.down("md")]: {
+    display: "none",
+  },
+}));
+
+const BackgroundImage = styled("img")(({ theme }) => ({
+  position: "absolute",
+
+  top: "50%",
+
+  left: "30%",
+
+  zIndex: 0,
+
+  width: "112vh",
+
+  height: "auto",
+
+  maxWidth: "none",
+
+  objectFit: "contain",
+
+  transform: "translate(-50%, -50%) rotate(90deg)",
+
+  transformOrigin: "center",
+
+  pointerEvents: "none",
+
+  userSelect: "none",
+
+  [theme.breakpoints.down("lg")]: {
+    left: "40%",
+
+    width: "118vh",
+  },
+}));
+
+const PrepArtwork = styled("img")(({ theme }) => ({
+  position: "absolute",
+
+  top: "50%",
+
+  left: "50%",
+
+  zIndex: 2,
+
+  width: "76%",
+
+  maxWidth: 760,
+
+  height: "auto",
+
+  objectFit: "contain",
+
+  transform: "translate(-48%, -50%)",
+
+  filter: "drop-shadow(0 24px 44px rgba(70, 50, 20, 0.16))",
+
+  pointerEvents: "none",
+
+  userSelect: "none",
+
+  [theme.breakpoints.down("lg")]: {
+    width: "86%",
+  },
+}));
+
 export function AuthShell({ children }: AuthShellProps) {
   return (
-    <AuthRoot container>
-      <FormPanel size={{ xs: 12, md: 6 }}>
-        <FormPanelContent>
-          <LogoContainer>
+    <ShellRoot>
+      <FormSide>
+        <FormColumn>
+          <BrandArea>
             <LumosLogo />
-          </LogoContainer>
+          </BrandArea>
 
-          <FormArea>
-            <FormContainer>{children}</FormContainer>
-          </FormArea>
-        </FormPanelContent>
-      </FormPanel>
+          <FormContent>{children}</FormContent>
+        </FormColumn>
+      </FormSide>
 
-      <BrandPanel size={{ xs: 0, md: 6 }}>
-        <BrandMessage>
-          <BrandHeadline variant="h3">
-            Turn meetings into execution.
-          </BrandHeadline>
+      <VisualSide aria-hidden="true">
+        <BackgroundImage src="/bg_img.webp" alt="" />
 
-          <BrandDescription variant="body1">
-            Capture commitments, resolve missing ownership and keep execution
-            moving after every meeting.
-          </BrandDescription>
-        </BrandMessage>
-      </BrandPanel>
-    </AuthRoot>
+        <PrepArtwork src="/prep_img.webp" alt="" />
+      </VisualSide>
+    </ShellRoot>
   );
 }

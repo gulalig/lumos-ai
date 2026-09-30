@@ -75,7 +75,19 @@ func (c *Client) ConnectToRoom(
 	handler TrackHandler,
 ) (*lksdk.Room, error) {
 	callback := &lksdk.RoomCallback{
+		OnParticipantDisconnected: func(participant *lksdk.RemoteParticipant) {
+			if h, ok := handler.(interface{ HandleParticipantDisconnected(string) }); ok {
+				h.HandleParticipantDisconnected(participant.Identity())
+			}
+		},
 		ParticipantCallback: lksdk.ParticipantCallback{
+			OnDataPacket: func(packet lksdk.DataPacket, params lksdk.DataReceiveParams) {
+				if h, ok := handler.(interface {
+					HandleDataPacket(lksdk.DataPacket, lksdk.DataReceiveParams)
+				}); ok {
+					h.HandleDataPacket(packet, params)
+				}
+			},
 			OnTrackSubscribed: func(
 				track *webrtc.TrackRemote,
 				publication *lksdk.RemoteTrackPublication,
@@ -120,6 +132,7 @@ func (c *Client) ConnectToRoom(
 			APISecret:           c.apiSecret,
 			RoomName:            roomName,
 			ParticipantIdentity: identity,
+			ParticipantMetadata: `{"type":"lumos-runtime"}`,
 		},
 		callback,
 	)

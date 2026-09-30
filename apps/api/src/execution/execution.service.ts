@@ -128,6 +128,11 @@ export class ExecutionService {
             'Superseded observation has no execution-state link',
           );
         }
+        if (previousLink.meetingId !== input.meetingId) {
+          throw new ConflictException(
+            'Superseded observation belongs to another meeting',
+          );
+        }
 
         const existingItem = await items.findOne({
           where: {

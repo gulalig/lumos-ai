@@ -178,7 +178,7 @@ func (
 	publishTrackStarted :=
 		time.Now()
 
-	_, err =
+	publication, err :=
 		p.room.
 			LocalParticipant.
 			PublishTrack(
@@ -201,6 +201,12 @@ func (
 			err,
 		)
 	}
+	defer func() {
+		// Close alone drains PCMLocalTrack's queue. Barge-in must discard it
+		// and detach the sender so already queued speech cannot keep playing.
+		track.ClearQueue()
+		_ = p.room.LocalParticipant.UnpublishTrack(publication.SID())
+	}()
 
 	// PublishTrack may return before the WebRTC sender has
 	// actually bound the local track.
@@ -260,7 +266,9 @@ func (
 	playoutStarted :=
 		time.Now()
 
-	track.WaitForPlayout()
+	if err := waitForPlayout(ctx, track); err != nil {
+		return err
+	}
 
 	playoutDuration :=
 		time.Since(

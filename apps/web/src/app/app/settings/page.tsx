@@ -1,10 +1,8 @@
-import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
+import { SettingsView } from "@/features/settings/SettingsView";
 
 export default function SettingsPage() {
-  return (
-    <PagePlaceholder
-      title="Settings"
-      description="Manage your profile, workspace and preferences."
-    />
-  );
+  return <SettingsView />;
 }
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Settings" };
